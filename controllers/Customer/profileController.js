@@ -2,7 +2,7 @@ const profileService = require('../../services/Customer/profileService');
 
 /**
  * Controller: Get Customer Profile
- * Nhiệm vụ: Nhận request → Gọi Service → Trả response
+ * Task: Receive request → Call Service → Return response
  */
 const getProfile = async (req, res) => {
   try {
@@ -16,7 +16,7 @@ const getProfile = async (req, res) => {
     console.error('Get Customer Profile Error:', error);
     
     const statusCode = error.statusCode || 500;
-    const message = error.message || 'Lỗi server khi lấy thông tin';
+    const message = error.message || 'Server error while fetching profile';
     
     res.status(statusCode).json({ 
       success: false, 
@@ -28,7 +28,7 @@ const getProfile = async (req, res) => {
 
 /**
  * Controller: Update Customer Profile
- * Nhiệm vụ: Nhận request → Gọi Service → Trả response
+ * Task: Receive request → Call Service → Return response
  */
 const updateProfile = async (req, res) => {
   try {
@@ -36,14 +36,14 @@ const updateProfile = async (req, res) => {
     
     res.status(200).json({
       success: true,
-      message: 'Cập nhật thông tin thành công',
+      message: 'Profile updated successfully',
       data: result
     });
   } catch (error) {
     console.error('Update Customer Profile Error:', error);
     
     const statusCode = error.statusCode || 500;
-    const message = error.message || 'Lỗi server khi cập nhật thông tin';
+    const message = error.message || 'Server error while updating profile';
     
     res.status(statusCode).json({ 
       success: false, 

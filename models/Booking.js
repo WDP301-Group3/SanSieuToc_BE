@@ -1,25 +1,30 @@
 const mongoose = require('mongoose');
 
 const bookingSchema = new mongoose.Schema({
-  customer_id: {
+  customerID: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Customer',
     required: true
   },
-  total_price: {
+  totalPrice: {
     type: Number,
     required: true,
     min: 0
   },
-  deposit_amount: {
+  depositAmount: {
     type: Number,
     required: true,
     min: 0
   },
-  payment_status: {
+  status: {
     type: String,
-    enum: ['Pending', 'Confirmed', 'Paid', 'Cancelled'],
+    enum: ['Pending', 'Confirmed', 'Cancelled'],
     default: 'Pending'
+  },
+  statusPayment: {
+    type: String,
+    enum: ['Unpaid', 'Paid'],
+    default: 'Unpaid'
   }
 }, {
   timestamps: true

@@ -17,9 +17,18 @@ const managerSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  phone: {
+    type: String,
+    trim: true,
+    default: ''
+  },
   image: {
     type: String,
     default: ''
+  },
+  imageQR: {
+    type: String,
+    default: '' // Store base64 of QR image uploaded by manager
   }
 }, {
   timestamps: true

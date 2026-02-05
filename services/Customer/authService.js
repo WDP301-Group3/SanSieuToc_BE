@@ -1,6 +1,14 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Customer = require('../../models/Customer');
+const { 
+  isValidEmail, 
+  isValidPhone, 
+  isValidPassword, 
+  isPasswordMatch, 
+  isValidAddress,
+  validateRequiredFields 
+} = require('../../utils/validators');
 
 /**
  * Service: Register new customer
@@ -9,61 +17,57 @@ const registerCustomer = async (customerData) => {
   const { email, password, confirmPassword, name, phone, address, image } = customerData;
 
   // Validate required fields
-  if (!email || !password || !confirmPassword || !name || !phone || !address) {
+  const requiredFieldsCheck = validateRequiredFields(customerData, 
+    ['email', 'password', 'confirmPassword', 'name', 'phone', 'address']
+  );
+  if (!requiredFieldsCheck.isValid) {
     throw { 
       statusCode: 400, 
-      message: 'Email, password, confirmPassword, name, phone và address là bắt buộc' 
+      message: `The following fields are required: ${requiredFieldsCheck.missingFields.join(', ')}` 
     };
   }
 
   // Validate email format
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
-    throw { statusCode: 400, message: 'Email không hợp lệ' };
+  if (!isValidEmail(email)) {
+    throw { statusCode: 400, message: 'Invalid email' };
   }
 
   // Validate phone format (Vietnam phone number)
-  const phoneRegex = /^(0|\+84)[0-9]{9,10}$/;
-  if (!phoneRegex.test(phone)) {
+  if (!isValidPhone(phone)) {
     throw { 
       statusCode: 400, 
-      message: 'Số điện thoại không hợp lệ. Vui lòng nhập đúng định dạng (VD: 0901234567)' 
+      message: 'Invalid phone number. Please enter correct format (e.g., 0901234567)' 
     };
   }
 
   // Validate password format
-  if (password.length < 8) {
-    throw { statusCode: 400, message: 'Mật khẩu phải có ít nhất 8 ký tự' };
-  }
-
-  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$/;
-  if (!passwordRegex.test(password)) {
+  if (!isValidPassword(password)) {
     throw { 
       statusCode: 400, 
-      message: 'Mật khẩu phải có ít nhất 8 ký tự, bao gồm chữ hoa, chữ thường, số và ký tự đặc biệt (@$!%*?&#)' 
+      message: 'Password must be at least 8 characters, including uppercase, lowercase, number and special character (@$!%*?&#)' 
     };
   }
 
   // Validate password match
-  if (password !== confirmPassword) {
-    throw { statusCode: 400, message: 'Mật khẩu xác nhận không khớp' };
+  if (!isPasswordMatch(password, confirmPassword)) {
+    throw { statusCode: 400, message: 'Confirm password does not match' };
   }
 
   // Validate address length
-  if (address.trim().length < 10) {
-    throw { statusCode: 400, message: 'Địa chỉ phải có ít nhất 10 ký tự' };
+  if (!isValidAddress(address)) {
+    throw { statusCode: 400, message: 'Address must be at least 10 characters' };
   }
 
   // Check if customer already exists
   const existingCustomer = await Customer.findOne({ email });
   if (existingCustomer) {
-    throw { statusCode: 400, message: 'Email đã được sử dụng' };
+    throw { statusCode: 400, message: 'Email already in use' };
   }
 
   // Check if phone already exists
   const existingPhone = await Customer.findOne({ phone });
   if (existingPhone) {
-    throw { statusCode: 400, message: 'Số điện thoại đã được sử dụng' };
+    throw { statusCode: 400, message: 'Phone number already in use' };
   }
 
   // Hash password
@@ -110,19 +114,19 @@ const loginCustomer = async (credentials) => {
 
   // Validate input
   if (!email || !password) {
-    throw { statusCode: 400, message: 'Email và password là bắt buộc' };
+    throw { statusCode: 400, message: 'Email and password are required' };
   }
 
   // Find customer
   const customer = await Customer.findOne({ email });
   if (!customer) {
-    throw { statusCode: 401, message: 'Email hoặc mật khẩu không đúng' };
+    throw { statusCode: 401, message: 'Invalid email or password' };
   }
 
   // Verify password
   const isPasswordValid = await bcrypt.compare(password, customer.password);
   if (!isPasswordValid) {
-    throw { statusCode: 401, message: 'Email hoặc mật khẩu không đúng' };
+    throw { statusCode: 401, message: 'Invalid email or password' };
   }
 
   // Generate JWT token

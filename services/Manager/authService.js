@@ -10,19 +10,19 @@ const loginManager = async (credentials) => {
 
   // Validate input
   if (!email || !password) {
-    throw { statusCode: 400, message: 'Email và password là bắt buộc' };
+    throw { statusCode: 400, message: 'Email and password are required' };
   }
 
   // Find manager
   const manager = await Manager.findOne({ email });
   if (!manager) {
-    throw { statusCode: 401, message: 'Email hoặc mật khẩu không đúng' };
+    throw { statusCode: 401, message: 'Invalid email or password' };
   }
 
   // Verify password
   const isPasswordValid = await bcrypt.compare(password, manager.password);
   if (!isPasswordValid) {
-    throw { statusCode: 401, message: 'Email hoặc mật khẩu không đúng' };
+    throw { statusCode: 401, message: 'Invalid email or password' };
   }
 
   // Generate JWT token

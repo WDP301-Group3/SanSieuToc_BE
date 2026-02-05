@@ -1,4 +1,6 @@
 const Customer = require('../../models/Customer');
+const { isValidPhone, isValidAddress } = require('../../utils/validators');
+const { uploadImageBase64, deleteImage } = require('../../utils/cloudinaryConfig');
 
 /**
  * Service: Get customer profile by ID
@@ -7,7 +9,7 @@ const getCustomerProfile = async (customerId) => {
   const customer = await Customer.findById(customerId).select('-password');
   
   if (!customer) {
-    throw { statusCode: 404, message: 'Không tìm thấy customer' };
+    throw { statusCode: 404, message: 'Customer not found' };
   }
 
   return { customer };
@@ -21,16 +23,15 @@ const updateCustomerProfile = async (customerId, updateData) => {
 
   // Validate required fields
   if (!name || name.trim().length === 0) {
-    throw { statusCode: 400, message: 'Tên không được để trống' };
+    throw { statusCode: 400, message: 'Name is required' };
   }
 
   // Validate phone format if provided
   if (phone) {
-    const phoneRegex = /^(0|\+84)[0-9]{9,10}$/;
-    if (!phoneRegex.test(phone)) {
+    if (!isValidPhone(phone)) {
       throw { 
         statusCode: 400, 
-        message: 'Số điện thoại không hợp lệ. Vui lòng nhập đúng định dạng (VD: 0901234567)' 
+        message: 'Invalid phone number. Please enter correct format (e.g., 0901234567)' 
       };
     }
 
@@ -40,13 +41,13 @@ const updateCustomerProfile = async (customerId, updateData) => {
       _id: { $ne: customerId } 
     });
     if (existingPhone) {
-      throw { statusCode: 400, message: 'Số điện thoại đã được sử dụng' };
+      throw { statusCode: 400, message: 'Phone number already in use' };
     }
   }
 
   // Validate address if provided
-  if (address && address.trim().length < 10) {
-    throw { statusCode: 400, message: 'Địa chỉ phải có ít nhất 10 ký tự' };
+  if (address && !isValidAddress(address)) {
+    throw { statusCode: 400, message: 'Address must be at least 10 characters' };
   }
 
   // Update customer
@@ -56,7 +57,24 @@ const updateCustomerProfile = async (customerId, updateData) => {
   
   if (phone) updateFields.phone = phone;
   if (address) updateFields.address = address.trim();
-  if (image !== undefined) updateFields.image = image;
+  
+  // Upload profile image to Cloudinary if base64 provided
+  if (image !== undefined) {
+    if (image && image.startsWith('data:image/')) {
+      // Delete old image from Cloudinary (if exists)
+      const oldCustomer = await Customer.findById(customerId);
+      if (oldCustomer && oldCustomer.image) {
+        await deleteImage(oldCustomer.image);
+      }
+      
+      // Upload new image to Cloudinary
+      const imageUrl = await uploadImageBase64(image, 'customers', `customer_${customerId}`);
+      updateFields.image = imageUrl;
+    } else {
+      // If not base64 (can be URL or empty string)
+      updateFields.image = image;
+    }
+  }
 
   const customer = await Customer.findByIdAndUpdate(
     customerId,
@@ -65,7 +83,7 @@ const updateCustomerProfile = async (customerId, updateData) => {
   ).select('-password');
 
   if (!customer) {
-    throw { statusCode: 404, message: 'Không tìm thấy customer' };
+    throw { statusCode: 404, message: 'Customer not found' };
   }
 
   return { customer };

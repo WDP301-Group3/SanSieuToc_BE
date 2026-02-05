@@ -1,12 +1,12 @@
 const mongoose = require('mongoose');
 
 const feedbackSchema = new mongoose.Schema({
-  booking_detail_id: {
+  bookingDetailID: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'BookingDetail',
     required: true
   },
-  rating: {
+  rate: {
     type: Number,
     required: true,
     min: 1,
