@@ -1,21 +1,21 @@
 const mongoose = require('mongoose');
 
 const bookingDetailSchema = new mongoose.Schema({
-  field_id: {
+  fieldID: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Field',
     required: true
   },
-  booking_id: {
+  bookingID: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Booking',
     required: true
   },
-  start_time: {
+  startTime: {
     type: Date,
     required: true
   },
-  end_time: {
+  endTime: {
     type: Date,
     required: true
   },

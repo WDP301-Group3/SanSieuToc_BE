@@ -1,21 +1,18 @@
 const mongoose = require('mongoose');
 
 const fieldTypeSchema = new mongoose.Schema({
-  name: {
+  typeName: {
     type: String,
     required: true,
     trim: true
   },
-  category_id: {
+  categoryID: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Category',
     required: true
-  },
-  slot_duration: {
-    type: Number,
-    required: true,
-    enum: [30, 60]
   }
+}, {
+  timestamps: true
 });
 
 module.exports = mongoose.model('FieldType', fieldTypeSchema);

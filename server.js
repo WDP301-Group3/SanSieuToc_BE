@@ -15,7 +15,7 @@ mongoose.connect(process.env.MONGO_URI)
 
 app.get('/', async(req, res)=>{
     try {
-        res.send({message: 'Welcome to Sân Siêu Tốc!'});
+        res.send({message: 'Welcome to San Sieu Toc API!'});
     } catch (error) {
         res.send({error: error.message});
     }

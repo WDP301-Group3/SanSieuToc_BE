@@ -1,43 +1,58 @@
 const mongoose = require('mongoose');
 
-const imageSchema = new mongoose.Schema({
-  url: {
-    type: String,
+const fieldSchema = new mongoose.Schema({
+  managerID: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Manager',
     required: true
   },
-  alt: {
-    type: String,
-    default: ''
-  }
-}, { _id: false });
-
-const fieldSchema = new mongoose.Schema({
-  field_name: {
+  fieldTypeID: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'FieldType',
+    required: true
+  },
+  fieldName: {
     type: String,
     required: true,
     trim: true
   },
-  field_type_address_id: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'FieldTypeAddress',
+  address: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  description: {
+    type: String,
+    default: ''
+  },
+  slotDuration: {
+    type: Number,
     required: true
   },
-  hourly_price: {
+  openingTime: {
+    type: String,
+    required: true,
+    default: '06:00'
+  },
+  closingTime: {
+    type: String,
+    required: true,
+    default: '22:00'
+  },
+  hourlyPrice: {
     type: Number,
     required: true,
     min: 0
   },
   status: {
     type: String,
-    enum: ['Active', 'Maintenance'],
-    default: 'Active'
-  },
-  images: [imageSchema],
-  description: {
-    type: String,
-    default: ''
+    enum: ['Available', 'Maintenance'],
+    default: 'Available'
   },
   utilities: [{
+    type: String
+  }],
+  image: [{
     type: String
   }]
 }, {
