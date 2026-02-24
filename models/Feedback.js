@@ -18,7 +18,8 @@ const feedbackSchema = new mongoose.Schema({
     trim: true
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  collection: 'feedbacks'
 });
 
 module.exports = mongoose.model('Feedback', feedbackSchema);

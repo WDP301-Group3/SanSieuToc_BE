@@ -70,11 +70,40 @@ const validateRequiredFields = (data, requiredFields) => {
   };
 };
 
+/**
+ * Validate rating for feedback
+ * @param {number} rating - Rating to validate
+ * @param {number} minRating - Minimum rating (default: 1)
+ * @param {number} maxRating - Maximum rating (default: 5)
+ * @returns {boolean} - True if valid, false otherwise
+ */
+const isValidRating = (rating, minRating = 1, maxRating = 5) => {
+  const num = parseInt(rating);
+  return !isNaN(num) && num >= minRating && num <= maxRating;
+};
+
+/**
+ * Validate text content for feedback/reviews
+ * @param {string} text - Text to validate
+ * @param {number} minLength - Minimum length (default: 10)
+ * @param {number} maxLength - Maximum length (default: 500)
+ * @returns {boolean} - True if valid, false otherwise
+ */
+const isValidText = (text, minLength = 10, maxLength = 500) => {
+  if (!text || typeof text !== 'string') {
+    return false;
+  }
+  const trimmedText = text.trim();
+  return trimmedText.length >= minLength && trimmedText.length <= maxLength;
+};
+
 module.exports = {
   isValidEmail,
   isValidPhone,
   isValidPassword,
   isPasswordMatch,
   isValidAddress,
-  validateRequiredFields
+  validateRequiredFields,
+  isValidRating,
+  isValidText
 };
