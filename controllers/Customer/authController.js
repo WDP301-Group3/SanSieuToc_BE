@@ -54,7 +54,63 @@ const login = async (req, res) => {
   }
 };
 
+/**
+ * Controller: Change Customer Password
+ * Nhiệm vụ: Nhận request từ client → Gọi Service → Trả response
+ */
+const changePassword = async (req, res) => {
+  try {
+    const result = await authService.changeCustomerPassword(req.userId, req.body);
+    
+    res.status(200).json({
+      success: true,
+      message: result.message,
+      data: result
+    });
+  } catch (error) {
+    console.error('Change Customer Password Error:', error);
+    
+    const statusCode = error.statusCode || 500;
+    const message = error.message || 'Server error while changing password';
+    
+    res.status(statusCode).json({ 
+      success: false, 
+      message,
+      error: error.message 
+    });
+  }
+};
+
+/**
+ * Controller: Reset Customer Password
+ * Nhiệm vụ: Nhận request từ client → Gọi Service → Trả response
+ */
+const resetPassword = async (req, res) => {
+  try {
+    const result = await authService.resetCustomerPassword(req.body.email);
+    
+    res.status(200).json({
+      success: true,
+      message: result.message,
+      data: result
+    });
+  } catch (error) {
+    console.error('Reset Customer Password Error:', error);
+    
+    const statusCode = error.statusCode || 500;
+    const message = error.message || 'Server error while resetting password';
+    
+    res.status(statusCode).json({ 
+      success: false, 
+      message,
+      error: error.message 
+    });
+  }
+};
+
 module.exports = {
   register,
-  login
+  login,
+  changePassword,
+  resetPassword
 };

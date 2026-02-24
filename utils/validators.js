@@ -70,11 +70,43 @@ const validateRequiredFields = (data, requiredFields) => {
   };
 };
 
+/**
+ * Generate random password that meets validation requirements
+ * Requirements: At least 8 characters, 1 uppercase, 1 lowercase, 1 number, 1 special character
+ * @param {number} length - Password length (default: 12)
+ * @returns {string} - Random password
+ */
+const generateRandomPassword = (length = 12) => {
+  const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+  const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const numbers = '0123456789';
+  const special = '@$!%*?&#';
+  
+  // Ensure at least one character from each required category
+  let password = '';
+  password += lowercase[Math.floor(Math.random() * lowercase.length)];
+  password += uppercase[Math.floor(Math.random() * uppercase.length)];
+  password += numbers[Math.floor(Math.random() * numbers.length)];
+  password += special[Math.floor(Math.random() * special.length)];
+  
+  // Fill the rest with random characters from all categories
+  const allChars = lowercase + uppercase + numbers + special;
+  for (let i = password.length; i < length; i++) {
+    password += allChars[Math.floor(Math.random() * allChars.length)];
+  }
+  
+  // Shuffle the password to avoid predictable pattern
+  password = password.split('').sort(() => Math.random() - 0.5).join('');
+  
+  return password;
+};
+
 module.exports = {
   isValidEmail,
   isValidPhone,
   isValidPassword,
   isPasswordMatch,
   isValidAddress,
-  validateRequiredFields
+  validateRequiredFields,
+  generateRandomPassword
 };
