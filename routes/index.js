@@ -11,6 +11,7 @@ const customerProfileRoutes = require('./Customer/profileRoutes');
 
 // Import field routes
 const managerFieldRoutes = require('./Manager/fieldRoutes');
+const customerFieldRoutes = require('./Customer/fieldRoutes');
 
 // Auth routes
 router.use('/api/manager/auth', managerAuthRoutes);
@@ -22,5 +23,6 @@ router.use('/api/customer/profile', customerProfileRoutes);
 
 // Field routes
 router.use('/api/manager/field', managerFieldRoutes);
+router.use('/api/field', customerFieldRoutes); // Public field routes for customers
 
 module.exports = router;
