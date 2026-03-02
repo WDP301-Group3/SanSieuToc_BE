@@ -1,12 +1,16 @@
 const Field = require('../../models/Field');
 const FieldType = require('../../models/FieldType');
+const Category = require('../../models/Category');
 
 /**
  * Service: Get all fields (public - for customers)
  */
 const getAllFields = async () => {
-    const fields = await Field.find({ status: 'Available' })
-        .populate('fieldTypeID')
+    const fields = await Field.find({ status: { $in: ['Available', 'Maintenance'] } })
+        .populate({
+            path: 'fieldTypeID',
+            populate: { path: 'categoryID' }
+        })
         .populate('managerID', 'fullName phone address')
         .sort({ createdAt: -1 });
 
@@ -21,7 +25,10 @@ const getFieldById = async (fieldId) => {
         _id: fieldId,
         status: 'Available'
     })
-        .populate('fieldTypeID')
+        .populate({
+            path: 'fieldTypeID',
+            populate: { path: 'categoryID' }
+        })
         .populate('managerID', 'fullName phone address');
 
     if (!field) {
