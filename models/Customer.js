@@ -30,6 +30,11 @@ const customerSchema = new mongoose.Schema({
     type: String,
     required: true,
     trim: true
+  },
+  status: {
+    type: String,
+    enum: ['Active', 'Banned'],
+    default: 'active'
   }
 }, {
   timestamps: true

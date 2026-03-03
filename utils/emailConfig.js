@@ -80,7 +80,85 @@ const sendResetPasswordEmail = async (to, newPassword, userName) => {
   return await transporter.sendMail(mailOptions);
 };
 
+/**
+ * Send email when deposit is confirmed (Pending → Confirmed)
+ */
+const sendDepositConfirmedEmail = async (customer, booking, field) => {
+  if (!isEmailConfigured()) {
+    console.warn('⚠️ Email not configured. Skipping deposit confirmation email.');
+    return;
+  }
+
+  const transporter = createTransporter();
+
+  const mailOptions = {
+    from: `"San Sieu Toc" <${process.env.EMAIL_USER}>`,
+    to: customer.email,
+    subject: 'Xác nhận đã nhận tiền cọc - San Sieu Toc',
+    html: `
+      <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
+        <h2 style="color: #4CAF50;">✅ Đã xác nhận tiền cọc!</h2>
+        <p>Xin chào <strong>${customer.name}</strong>,</p>
+        <p>Chúng tôi đã xác nhận nhận được tiền cọc cho booking của bạn tại <strong>${field.fieldName}</strong>.</p>
+        
+        <div style="margin: 20px 0; padding: 15px; background-color: #e8f5e9; border-left: 4px solid #4CAF50;">
+          <p style="margin: 5px 0;"><strong>Mã booking:</strong> #${booking._id.toString().slice(-6)}</p>
+          <p style="margin: 5px 0;"><strong>Tiền cọc:</strong> ${booking.depositAmount.toLocaleString('vi-VN')}đ</p>
+          <p style="margin: 5px 0;"><strong>Trạng thái:</strong> <span style="color: #4CAF50; font-weight: bold;">Đã xác nhận</span></p>
+        </div>
+        
+        <p>✅ Booking của bạn đã được xác nhận. Vui lòng đến đúng giờ đã đặt!</p>
+        
+        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+        <p style="color: #777; font-size: 12px;">© 2026 San Sieu Toc. All rights reserved.</p>
+      </div>
+    `
+  };
+
+  return await transporter.sendMail(mailOptions);
+};
+
+/**
+ * Send email when payment is confirmed (Unpaid → Paid)
+ */
+const sendPaymentConfirmedEmail = async (customer, booking, field) => {
+  if (!isEmailConfigured()) {
+    console.warn('⚠️ Email not configured. Skipping payment confirmation email.');
+    return;
+  }
+
+  const transporter = createTransporter();
+
+  const mailOptions = {
+    from: `"San Sieu Toc" <${process.env.EMAIL_USER}>`,
+    to: customer.email,
+    subject: 'Xác nhận thanh toán hoàn tất - San Sieu Toc',
+    html: `
+      <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
+        <h2 style="color: #2196F3;">✅ Thanh toán hoàn tất!</h2>
+        <p>Xin chào <strong>${customer.name}</strong>,</p>
+        <p>Chúng tôi đã xác nhận nhận được thanh toán đầy đủ cho booking tại <strong>${field.fieldName}</strong>.</p>
+        
+        <div style="margin: 20px 0; padding: 15px; background-color: #e3f2fd; border-left: 4px solid #2196F3;">
+          <p style="margin: 5px 0;"><strong>Mã booking:</strong> #${booking._id.toString().slice(-6)}</p>
+          <p style="margin: 5px 0;"><strong>Tổng tiền:</strong> ${booking.totalPrice.toLocaleString('vi-VN')}đ</p>
+          <p style="margin: 5px 0;"><strong>Trạng thái:</strong> <span style="color: #2196F3; font-weight: bold;">Đã thanh toán đủ</span></p>
+        </div>
+        
+        <p>🎉 Cảm ơn bạn đã sử dụng dịch vụ của chúng tôi!</p>
+        
+        <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
+        <p style="color: #777; font-size: 12px;">© 2026 San Sieu Toc. All rights reserved.</p>
+      </div>
+    `
+  };
+
+  return await transporter.sendMail(mailOptions);
+};
+
 module.exports = {
   sendResetPasswordEmail,
+  sendDepositConfirmedEmail,
+  sendPaymentConfirmedEmail,
   isEmailConfigured
 };
