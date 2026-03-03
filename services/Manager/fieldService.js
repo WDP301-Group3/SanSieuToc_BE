@@ -161,6 +161,7 @@ const checkActiveBookings = async (fieldId) => {
  */
 const createField = async (managerId, fieldData) => {
     const {
+        categoryID,
         fieldTypeID,
         fieldName,
         address,
@@ -174,17 +175,28 @@ const createField = async (managerId, fieldData) => {
     } = fieldData;
 
     // Validate required fields
-    if (!fieldTypeID || !fieldName || !address || !slotDuration || !hourlyPrice || !openingTime || !closingTime || !image) {
+    if (!categoryID || !fieldTypeID || !fieldName || !address || !slotDuration || !hourlyPrice || !openingTime || !closingTime || !image) {
         throw {
             statusCode: 400,
-            message: 'fieldTypeID, fieldName, address, slotDuration, hourlyPrice, openingTime, closingTime, and image are required'
+            message: 'categoryID, fieldTypeID, fieldName, address, slotDuration, hourlyPrice, openingTime, closingTime, and image are required'
         };
+    }
+
+    // Check if category exists
+    const category = await Category.findById(categoryID);
+    if (!category) {
+        throw { statusCode: 404, message: 'Category not found' };
     }
 
     // Check if fieldType exists
     const fieldType = await FieldType.findById(fieldTypeID).populate('categoryID');
     if (!fieldType) {
         throw { statusCode: 404, message: 'FieldType not found' };
+    }
+
+    // Validate fieldType belongs to selected category
+    if (fieldType.categoryID._id.toString() !== categoryID) {
+        throw { statusCode: 400, message: 'FieldType does not belong to the selected category' };
     }
 
     // Validate fieldName
@@ -532,10 +544,58 @@ const deleteField = async (managerId, fieldId) => {
     return { message: 'Field deleted successfully' };
 };
 
+/**
+ * Service: Get all categories
+ */
+const getAllCategories = async () => {
+    const categories = await Category.find().sort({ categoryName: 1 });
+    return { categories };
+};
+
+/**
+ * Service: Get field types by category ID
+ */
+const getFieldTypesByCategory = async (categoryId) => {
+    const category = await Category.findById(categoryId);
+    if (!category) {
+        throw { statusCode: 404, message: 'Category not found' };
+    }
+
+    const fieldTypes = await FieldType.find({ categoryID: categoryId })
+        .populate('categoryID')
+        .sort({ typeName: 1 });
+    return { category, fieldTypes };
+};
+
+/**
+ * Service: Get all data needed for create field form
+ */
+const getCreateFormData = async () => {
+    const categories = await Category.find().sort({ categoryName: 1 });
+    const fieldTypes = await FieldType.find().populate('categoryID').sort({ typeName: 1 });
+
+    // Group field types by category
+    const categoriesWithTypes = categories.map(category => {
+        const types = fieldTypes.filter(ft =>
+            ft.categoryID && ft.categoryID._id.toString() === category._id.toString()
+        );
+        return {
+            _id: category._id,
+            categoryName: category.categoryName,
+            fieldTypes: types
+        };
+    });
+
+    return { categories: categoriesWithTypes };
+};
+
 module.exports = {
     createField,
     getFieldsByManager,
     getFieldById,
     updateField,
-    deleteField
+    deleteField,
+    getAllCategories,
+    getFieldTypesByCategory,
+    getCreateFormData
 };

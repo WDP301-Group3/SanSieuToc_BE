@@ -127,10 +127,88 @@ const deleteField = async (req, res) => {
     }
 };
 
+/**
+ * Controller: Get all categories
+ */
+const getCategories = async (req, res) => {
+    try {
+        const result = await fieldService.getAllCategories();
+
+        res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        console.error('Get Categories Error:', error);
+
+        const statusCode = error.statusCode || 500;
+        const message = error.message || 'Server error while fetching categories';
+
+        res.status(statusCode).json({
+            success: false,
+            message,
+            error: error.message
+        });
+    }
+};
+
+/**
+ * Controller: Get field types by category
+ */
+const getFieldTypesByCategory = async (req, res) => {
+    try {
+        const result = await fieldService.getFieldTypesByCategory(req.params.categoryId);
+
+        res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        console.error('Get Field Types By Category Error:', error);
+
+        const statusCode = error.statusCode || 500;
+        const message = error.message || 'Server error while fetching field types';
+
+        res.status(statusCode).json({
+            success: false,
+            message,
+            error: error.message
+        });
+    }
+};
+
+/**
+ * Controller: Get create form data (categories with field types)
+ */
+const getCreateFormData = async (req, res) => {
+    try {
+        const result = await fieldService.getCreateFormData();
+
+        res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        console.error('Get Create Form Data Error:', error);
+
+        const statusCode = error.statusCode || 500;
+        const message = error.message || 'Server error while fetching form data';
+
+        res.status(statusCode).json({
+            success: false,
+            message,
+            error: error.message
+        });
+    }
+};
+
 module.exports = {
     createField,
     getFields,
     getFieldById,
     updateField,
-    deleteField
+    deleteField,
+    getCategories,
+    getFieldTypesByCategory,
+    getCreateFormData
 };

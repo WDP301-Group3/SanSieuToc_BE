@@ -11,7 +11,7 @@ const getAllFields = async () => {
             path: 'fieldTypeID',
             populate: { path: 'categoryID' }
         })
-        .populate('managerID', 'fullName phone address')
+        .populate('managerID', 'name phone image')
         .sort({ createdAt: -1 });
 
     return { fields };
@@ -29,7 +29,7 @@ const getFieldById = async (fieldId) => {
             path: 'fieldTypeID',
             populate: { path: 'categoryID' }
         })
-        .populate('managerID', 'fullName phone address');
+        .populate('managerID', 'name phone image');
 
     if (!field) {
         throw { statusCode: 404, message: 'Field not found' };
@@ -42,12 +42,40 @@ const getFieldById = async (fieldId) => {
  * Service: Get all field types (public)
  */
 const getAllFieldTypes = async () => {
-    const fieldTypes = await FieldType.find().sort({ typeName: 1 });
+    const fieldTypes = await FieldType.find()
+        .populate('categoryID')
+        .sort({ typeName: 1 });
     return { fieldTypes };
+};
+
+/**
+ * Service: Get all categories (public)
+ */
+const getAllCategories = async () => {
+    const categories = await Category.find().sort({ categoryName: 1 });
+    return { categories };
+};
+
+/**
+ * Service: Get field types by category ID (public)
+ */
+const getFieldTypesByCategory = async (categoryId) => {
+    // Check if category exists
+    const category = await Category.findById(categoryId);
+    if (!category) {
+        throw { statusCode: 404, message: 'Category not found' };
+    }
+
+    const fieldTypes = await FieldType.find({ categoryID: categoryId })
+        .populate('categoryID')
+        .sort({ typeName: 1 });
+    return { category, fieldTypes };
 };
 
 module.exports = {
     getAllFields,
     getFieldById,
-    getAllFieldTypes
+    getAllFieldTypes,
+    getAllCategories,
+    getFieldTypesByCategory
 };
