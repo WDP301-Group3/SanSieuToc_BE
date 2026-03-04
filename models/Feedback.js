@@ -4,7 +4,8 @@ const feedbackSchema = new mongoose.Schema({
   bookingDetailID: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'BookingDetail',
-    required: true
+    required: true,
+    unique: true
   },
   rate: {
     type: Number,
@@ -18,7 +19,8 @@ const feedbackSchema = new mongoose.Schema({
     trim: true
   }
 }, {
-  timestamps: true
+  timestamps: true,
+  collection: 'feedbacks'
 });
 
 module.exports = mongoose.model('Feedback', feedbackSchema);

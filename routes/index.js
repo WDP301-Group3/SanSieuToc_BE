@@ -9,6 +9,14 @@ const customerAuthRoutes = require('./Customer/authRoutes');
 const managerProfileRoutes = require('./Manager/profileRoutes');
 const customerProfileRoutes = require('./Customer/profileRoutes');
 
+// Import dashboard routes
+const managerDashboardRoutes = require('./Manager/dashboardRoutes');
+
+// Import customer management routes
+const managerCustomerRoutes = require('./Manager/customerRoutes');
+
+// Import feedback routes
+const feedbackRoutes = require('./feedbackRoutes');
 // Import field routes
 
 // Import booking routes
@@ -18,6 +26,7 @@ const managerBookingRoutes = require('./Manager/bookingRoutes');
 const managerFieldRoutes = require('./Manager/fieldRoutes');
 const customerFieldRoutes = require('./Customer/fieldRoutes');
 
+
 // Auth routes
 router.use('/api/manager/auth', managerAuthRoutes);
 router.use('/api/customer/auth', customerAuthRoutes);
@@ -25,6 +34,16 @@ router.use('/api/customer/auth', customerAuthRoutes);
 // Profile routes
 router.use('/api/manager/profile', managerProfileRoutes);
 router.use('/api/customer/profile', customerProfileRoutes);
+
+
+// Dashboard routes
+router.use('/api/manager/dashboard', managerDashboardRoutes);
+
+// Customer management routes (Manager)
+router.use('/api/manager/customers', managerCustomerRoutes);
+
+// Feedback routes
+router.use('/api/feedback', feedbackRoutes);
 
 // Field routes
 
