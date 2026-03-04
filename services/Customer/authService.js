@@ -131,6 +131,11 @@ const loginCustomer = async (credentials) => {
     throw { statusCode: 401, message: 'Invalid email or password' };
   }
 
+  // Check account status
+  if (customer.status === 'Banned') {
+    throw { statusCode: 403, message: 'Tài khoản đã bị cấm. Vui lòng liên hệ quản trị viên' };
+  }
+
   // Generate JWT token
   const token = jwt.sign(
     { id: customer._id, role: 'customer' },
