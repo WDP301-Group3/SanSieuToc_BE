@@ -36,14 +36,17 @@ const checkDuplicateFieldName = async (managerId, fieldName, excludeFieldId = nu
 };
 
 /**
- * Check if address is duplicate for the same manager
+ * Check if field name is duplicate at the same address for the same manager
+ * Allows multiple fields at same address, but not same field name at same address
  * @param {ObjectId} managerId - Manager ID
+ * @param {string} fieldName - Field name to check
  * @param {string} address - Address to check
  * @param {ObjectId} excludeFieldId - Field ID to exclude (for update)
  */
-const checkDuplicateAddress = async (managerId, address, excludeFieldId = null) => {
+const checkDuplicateFieldAtAddress = async (managerId, fieldName, address, excludeFieldId = null) => {
     const query = {
         managerID: managerId,
+        fieldName: { $regex: new RegExp(`^${fieldName.trim()}$`, 'i') },
         address: { $regex: new RegExp(`^${address.trim()}$`, 'i') },
         status: { $ne: 'Deleted' }
     };
@@ -217,10 +220,10 @@ const createField = async (managerId, fieldData) => {
         throw { statusCode: 400, message: addressValidation.message };
     }
 
-    // Check duplicate address for same manager
-    const isDuplicateAddress = await checkDuplicateAddress(managerId, address);
-    if (isDuplicateAddress) {
-        throw { statusCode: 400, message: 'A field with this address already exists for your account' };
+    // Check duplicate field name at same address for same manager
+    const isDuplicateFieldAtAddress = await checkDuplicateFieldAtAddress(managerId, fieldName, address);
+    if (isDuplicateFieldAtAddress) {
+        throw { statusCode: 400, message: 'A field with this name already exists at this address' };
     }
 
     // Validate description
@@ -390,11 +393,15 @@ const updateField = async (managerId, fieldId, updateData) => {
         if (!addressValidation.isValid) {
             throw { statusCode: 400, message: addressValidation.message };
         }
+    }
 
-        // Check duplicate address for same manager (excluding current field)
-        const isDuplicateAddress = await checkDuplicateAddress(managerId, address, fieldName, fieldId);
-        if (isDuplicateAddress) {
-            throw { statusCode: 400, message: 'A field with this address already exists with the same name' };
+    // Check duplicate field name at same address when either fieldName or address is updated
+    if (fieldName || address) {
+        const checkFieldName = fieldName || existingField.fieldName;
+        const checkAddress = address || existingField.address;
+        const isDuplicateFieldAtAddress = await checkDuplicateFieldAtAddress(managerId, checkFieldName, checkAddress, fieldId);
+        if (isDuplicateFieldAtAddress) {
+            throw { statusCode: 400, message: 'A field with this name already exists at this address' };
         }
     }
 
