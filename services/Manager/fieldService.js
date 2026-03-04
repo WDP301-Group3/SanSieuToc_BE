@@ -392,9 +392,9 @@ const updateField = async (managerId, fieldId, updateData) => {
         }
 
         // Check duplicate address for same manager (excluding current field)
-        const isDuplicateAddress = await checkDuplicateAddress(managerId, address, fieldId);
+        const isDuplicateAddress = await checkDuplicateAddress(managerId, address, fieldName, fieldId);
         if (isDuplicateAddress) {
-            throw { statusCode: 400, message: 'A field with this address already exists for your account' };
+            throw { statusCode: 400, message: 'A field with this address already exists with the same name' };
         }
     }
 
