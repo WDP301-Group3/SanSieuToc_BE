@@ -20,7 +20,7 @@ const registerCustomer = async (customerData) => {
 
   // Validate required fields
   const requiredFieldsCheck = validateRequiredFields(customerData, 
-    ['email', 'password', 'confirmPassword', 'name', 'phone', 'address']
+    ['email', 'password', 'confirmPassword', 'name', 'phone']
   );
   if (!requiredFieldsCheck.isValid) {
     throw { 
@@ -55,8 +55,8 @@ const registerCustomer = async (customerData) => {
     throw { statusCode: 400, message: 'Confirm password does not match' };
   }
 
-  // Validate address length
-  if (!isValidAddress(address)) {
+  // Validate address length if provided
+  if (address && !isValidAddress(address)) {
     throw { statusCode: 400, message: 'Address must be at least 10 characters' };
   }
 
@@ -82,7 +82,7 @@ const registerCustomer = async (customerData) => {
     password: hashedPassword,
     name,
     phone,
-    address,
+    address: address || '',
     image: image || ''
   });
 

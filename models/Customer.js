@@ -28,8 +28,9 @@ const customerSchema = new mongoose.Schema({
   },
   address: {
     type: String,
-    required: true,
-    trim: true
+    required: false,
+    trim: true,
+    default: ''
   },
   status: {
     type: String,
