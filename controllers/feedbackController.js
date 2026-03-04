@@ -13,6 +13,7 @@ const getAllFeedback = async (req, res) => {
       success: true,
       message: 'Feedback retrieved successfully',
       data: result.feedbacks,
+      averageRating: result.averageRating,
       pagination: result.pagination
     });
   } catch (error) {
@@ -43,6 +44,7 @@ const getFeedbackByField = async (req, res) => {
       success: true,
       message: 'Field feedback retrieved successfully',
       data: result.feedbacks,
+      averageRating: result.averageRating,
       pagination: result.pagination
     });
   } catch (error) {

@@ -1,5 +1,7 @@
 const Feedback = require('../models/Feedback');
 const BookingDetail = require('../models/BookingDetail');
+const Booking = require('../models/Booking');
+const Field = require('../models/Field');
 const { isValidText, isValidRating } = require('../utils/validators');
 
 /**
@@ -16,6 +18,21 @@ const getAllFeedback = async (page = 1, limit = 10) => {
     // Get total count
     const total = await Feedback.countDocuments();
 
+    // Calculate average rating
+    const ratingStats = await Feedback.aggregate([
+      {
+        $group: {
+          _id: null,
+          averageRating: { $avg: '$rate' },
+          totalRatings: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const averageRating = ratingStats.length > 0 
+      ? parseFloat(ratingStats[0].averageRating.toFixed(1))
+      : 0;
+
     // Get paginated feedback with populated data
     const feedbacks = await Feedback.find()
       .sort({ createdAt: -1 })
@@ -29,6 +46,7 @@ const getAllFeedback = async (page = 1, limit = 10) => {
 
     return {
       feedbacks,
+      averageRating,
       pagination: {
         currentPage: page,
         totalPages,
@@ -85,6 +103,26 @@ const getFeedbackByField = async (fieldId, page = 1, limit = 10) => {
       bookingDetailID: { $in: bookingDetailIds }
     });
 
+    // Calculate average rating
+    const ratingStats = await Feedback.aggregate([
+      {
+        $match: {
+          bookingDetailID: { $in: bookingDetailIds }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          averageRating: { $avg: '$rate' },
+          totalRatings: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const averageRating = ratingStats.length > 0 
+      ? parseFloat(ratingStats[0].averageRating.toFixed(1))
+      : 0;
+
     // Get paginated feedback
     const feedbacks = await Feedback.find({
       bookingDetailID: { $in: bookingDetailIds }
@@ -99,6 +137,7 @@ const getFeedbackByField = async (fieldId, page = 1, limit = 10) => {
 
     return {
       feedbacks,
+      averageRating,
       pagination: {
         currentPage: page,
         totalPages,
@@ -160,14 +199,16 @@ const createFeedback = async (customerId, feedbackData) => {
       throw { statusCode: 404, message: 'Booking Detail not found' };
     }
 
-    if (bookingDetail.bookingID.customerID.toString() !== customerId) {
-      throw { statusCode: 403, message: 'Unauthorized to create feedback for this booking' };
+    // Check if BookingDetail status is Completed
+    if (bookingDetail.status !== 'Completed') {
+      throw {
+        statusCode: 400,
+        message: `Cannot create feedback. Booking Detail status must be 'Completed', current status: '${bookingDetail.status}'`
+      };
     }
 
-    // Check if feedback already exists for this booking detail
-    const existingFeedback = await Feedback.findOne({ bookingDetailID });
-    if (existingFeedback) {
-      throw { statusCode: 400, message: 'Feedback already exists for this booking' };
+    if (bookingDetail.bookingID.customerID.toString() !== customerId) {
+      throw { statusCode: 403, message: 'Unauthorized to create feedback for this booking' };
     }
 
     // Create feedback
@@ -224,6 +265,14 @@ const updateFeedback = async (customerId, feedbackId, updateData) => {
 
     if (!feedback) {
       throw { statusCode: 404, message: 'Feedback not found' };
+    }
+
+    // Check if BookingDetail status is Completed
+    if (feedback.bookingDetailID.status !== 'Completed') {
+      throw {
+        statusCode: 400,
+        message: `Cannot update feedback. Booking Detail status must be 'Completed', current status: '${feedback.bookingDetailID.status}'`
+      };
     }
 
     // Check ownership
