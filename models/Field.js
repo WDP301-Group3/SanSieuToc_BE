@@ -46,7 +46,7 @@ const fieldSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Available', 'Maintenance'],
+    enum: ['Available', 'Maintenance', 'Deleted'],
     default: 'Available'
   },
   utilities: [{
