@@ -147,6 +147,7 @@ const getFieldTypesByCategory = async (categoryId) => {
 };
 
 module.exports = {
+  getFieldDetail,
   getAllFields,
   getFieldById,
   getAllFieldTypes,
