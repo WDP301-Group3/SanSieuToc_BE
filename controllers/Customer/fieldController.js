@@ -55,31 +55,6 @@ const getFields = async (req, res) => {
 };
 
 /**
- * Controller: Get field by ID (public)
- */
-const getFieldById = async (req, res) => {
-    try {
-        const result = await fieldService.getFieldById(req.params.id);
-
-        res.status(200).json({
-            success: true,
-            data: result
-        });
-    } catch (error) {
-        console.error('Get Field By ID Error:', error);
-
-        const statusCode = error.statusCode || 500;
-        const message = error.message || 'Server error while fetching field';
-
-        res.status(statusCode).json({
-            success: false,
-            message,
-            error: error.message
-        });
-    }
-};
-
-/**
  * Controller: Get all field types (public)
  */
 const getFieldTypes = async (req, res) => {
@@ -157,7 +132,6 @@ const getFieldTypesByCategory = async (req, res) => {
 module.exports = {
     getFieldDetail,
     getFields,
-    getFieldById,
     getFieldTypes,
     getCategories,
     getFieldTypesByCategory

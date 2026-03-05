@@ -94,24 +94,6 @@ const getAllFields = async () => {
 /**
  * Service: Get field by ID (public - for customers)
  */
-const getFieldById = async (fieldId) => {
-  const field = await Field.findOne({
-    _id: fieldId,
-    status: 'Available'
-  })
-    .populate({
-      path: 'fieldTypeID',
-      populate: { path: 'categoryID' }
-    })
-    .populate('managerID', 'name phone image');
-
-  if (!field) {
-    throw { statusCode: 404, message: 'Field not found' };
-  }
-
-  return { field };
-};
-
 /**
  * Service: Get all field types (public)
  */
@@ -149,7 +131,6 @@ const getFieldTypesByCategory = async (categoryId) => {
 module.exports = {
   getFieldDetail,
   getAllFields,
-  getFieldById,
   getAllFieldTypes,
   getAllCategories,
   getFieldTypesByCategory
