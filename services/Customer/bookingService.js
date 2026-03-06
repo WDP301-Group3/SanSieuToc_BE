@@ -25,7 +25,7 @@ const getFieldAvailability = async (fieldId, date) => {
     throw { statusCode: 404, message: 'Sân không tồn tại' };
   }
 
-  if (field.status !== 'Maintenance') {
+  if (field.status === 'Maintenance') {
     throw { statusCode: 400, message: 'Sân đang bảo trì' };
   }
 
