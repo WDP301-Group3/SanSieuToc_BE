@@ -513,6 +513,7 @@ const getCustomerBookings = async (customerId) => {
         
         bookingDetails: details.map(bd => ({
           id: bd._id,
+          fieldId: bd.fieldID?._id || null,
           fieldName: bd.fieldID?.fieldName || '',
           fieldAddress: bd.fieldID?.address || '',
           startTime: bd.startTime,
