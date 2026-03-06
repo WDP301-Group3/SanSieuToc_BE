@@ -24,7 +24,7 @@ const getFieldDetail = async (fieldId) => {
           select: 'categoryName'
         }
       })
-      .populate('managerID', 'name email phone address')
+      .populate('managerID', 'name email phone address image imageQR')
       .select('-__v');
 
     if (!field) {
@@ -60,7 +60,9 @@ const getFieldDetail = async (fieldId) => {
         name: field.managerID.name,
         email: field.managerID.email,
         phone: field.managerID.phone,
-        address: field.managerID.address
+        address: field.managerID.address,
+        image: field.managerID.image || null,
+        imageQR: field.managerID.imageQR || null
       },
       createdAt: field.createdAt,
       updatedAt: field.updatedAt
