@@ -455,17 +455,6 @@ const updateField = async (managerId, fieldId, updateData) => {
         if (!['Available', 'Maintenance'].includes(status)) {
             throw { statusCode: 400, message: 'status must be Available or Maintenance' };
         }
-
-        // Check for active bookings when changing status to Maintenance
-        if (status === 'Maintenance' && existingField.status === 'Available') {
-            const activeBookingsCheck = await checkActiveBookings(fieldId);
-            if (activeBookingsCheck.hasActiveBookings) {
-                throw {
-                    statusCode: 409,
-                    message: `Cannot set field to Maintenance. ${activeBookingsCheck.count} active booking(s) exist. Please cancel or complete these bookings first.`
-                };
-            }
-        }
     }
 
     // Build update object
