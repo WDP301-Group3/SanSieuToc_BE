@@ -1,8 +1,8 @@
-const Field = require('../../models/Field');
-const Customer = require('../../models/Customer');
-const Feedback = require('../../models/Feedback');
-const Booking = require('../../models/Booking');
-const BookingDetail = require('../../models/BookingDetail');
+const Field = require("../../models/Field");
+const Customer = require("../../models/Customer");
+const Feedback = require("../../models/Feedback");
+const Booking = require("../../models/Booking");
+const BookingDetail = require("../../models/BookingDetail");
 
 /**
  * Service: Get dashboard statistics for Manager
@@ -19,20 +19,20 @@ const getDashboardStats = async () => {
     const bookingStatusBreakdown = await Booking.aggregate([
       {
         $group: {
-          _id: '$status',
-          count: { $sum: 1 }
-        }
-      }
+          _id: "$status",
+          count: { $sum: 1 },
+        },
+      },
     ]);
 
     // Get payment status breakdown
     const paymentStatusBreakdown = await Booking.aggregate([
       {
         $group: {
-          _id: '$statusPayment',
-          count: { $sum: 1 }
-        }
-      }
+          _id: "$statusPayment",
+          count: { $sum: 1 },
+        },
+      },
     ]);
 
     // Get total revenue and paid revenue
@@ -40,26 +40,26 @@ const getDashboardStats = async () => {
       {
         $group: {
           _id: null,
-          totalRevenue: { $sum: '$totalPrice' },
-          totalDeposit: { $sum: '$depositAmount' },
+          totalRevenue: { $sum: "$totalPrice" },
+          totalDeposit: { $sum: "$depositAmount" },
           totalPaidRevenue: {
             $sum: {
-              $cond: [{ $eq: ['$statusPayment', 'Paid'] }, '$totalPrice', 0]
-            }
-          }
-        }
-      }
+              $cond: [{ $eq: ["$statusPayment", "Paid"] }, "$totalPrice", 0],
+            },
+          },
+        },
+      },
     ]);
 
     // Get feedback rating statistics
     const feedbackStats = await Feedback.aggregate([
       {
         $group: {
-          _id: '$rating',
-          count: { $sum: 1 }
-        }
+          _id: "$rating",
+          count: { $sum: 1 },
+        },
       },
-      { $sort: { _id: 1 } }
+      { $sort: { _id: 1 } },
     ]);
 
     // Get average feedback rating
@@ -67,9 +67,9 @@ const getDashboardStats = async () => {
       {
         $group: {
           _id: null,
-          averageRating: { $avg: '$rating' }
-        }
-      }
+          averageRating: { $avg: "$rating" },
+        },
+      },
     ]);
 
     // Get bookings by month (last 6 months)
@@ -77,21 +77,21 @@ const getDashboardStats = async () => {
       {
         $match: {
           createdAt: {
-            $gte: new Date(Date.now() - 6 * 30 * 24 * 60 * 60 * 1000)
-          }
-        }
+            $gte: new Date(Date.now() - 6 * 30 * 24 * 60 * 60 * 1000),
+          },
+        },
       },
       {
         $group: {
           _id: {
-            year: { $year: '$createdAt' },
-            month: { $month: '$createdAt' }
+            year: { $year: "$createdAt" },
+            month: { $month: "$createdAt" },
           },
           count: { $sum: 1 },
-          revenue: { $sum: '$totalPrice' }
-        }
+          revenue: { $sum: "$totalPrice" },
+        },
       },
-      { $sort: { '_id.year': 1, '_id.month': 1 } }
+      { $sort: { "_id.year": 1, "_id.month": 1 } },
     ]);
 
     // Get bookings by week (last 12 weeks)
@@ -99,86 +99,86 @@ const getDashboardStats = async () => {
       {
         $match: {
           createdAt: {
-            $gte: new Date(Date.now() - 12 * 7 * 24 * 60 * 60 * 1000)
-          }
-        }
+            $gte: new Date(Date.now() - 12 * 7 * 24 * 60 * 60 * 1000),
+          },
+        },
       },
       {
         $group: {
           _id: {
-            year: { $isoDayOfWeek: '$createdAt' },
-            week: { $isoWeek: '$createdAt' },
-            isoYear: { $isoWeekYear: '$createdAt' }
+            year: { $isoDayOfWeek: "$createdAt" },
+            week: { $isoWeek: "$createdAt" },
+            isoYear: { $isoWeekYear: "$createdAt" },
           },
           count: { $sum: 1 },
-          revenue: { $sum: '$totalPrice' },
-          startDate: { $min: '$createdAt' }
-        }
+          revenue: { $sum: "$totalPrice" },
+          startDate: { $min: "$createdAt" },
+        },
       },
-      { $sort: { '_id.isoYear': 1, '_id.week': 1 } }
+      { $sort: { "_id.isoYear": 1, "_id.week": 1 } },
     ]);
 
     // Get revenue by field type
     const revenueByFieldType = await BookingDetail.aggregate([
       {
         $lookup: {
-          from: 'bookings',
-          localField: 'bookingID',
-          foreignField: '_id',
-          as: 'bookingInfo'
-        }
+          from: "bookings",
+          localField: "bookingID",
+          foreignField: "_id",
+          as: "bookingInfo",
+        },
       },
-      { $unwind: '$bookingInfo' },
+      { $unwind: "$bookingInfo" },
       {
         $lookup: {
-          from: 'fields',
-          localField: 'fieldID',
-          foreignField: '_id',
-          as: 'fieldInfo'
-        }
+          from: "fields",
+          localField: "fieldID",
+          foreignField: "_id",
+          as: "fieldInfo",
+        },
       },
-      { $unwind: '$fieldInfo' },
+      { $unwind: "$fieldInfo" },
       {
         $lookup: {
-          from: 'fieldtypes',
-          localField: 'fieldInfo.fieldTypeID',
-          foreignField: '_id',
-          as: 'fieldTypeInfo'
-        }
+          from: "fieldtypes",
+          localField: "fieldInfo.fieldTypeID",
+          foreignField: "_id",
+          as: "fieldTypeInfo",
+        },
       },
-      { $unwind: '$fieldTypeInfo' },
+      { $unwind: "$fieldTypeInfo" },
       {
         $group: {
           _id: {
-            fieldTypeID: '$fieldTypeInfo._id',
-            typeName: '$fieldTypeInfo.typeName'
+            fieldTypeID: "$fieldTypeInfo._id",
+            typeName: "$fieldTypeInfo.typeName",
           },
           count: { $sum: 1 },
-          totalRevenue: { $sum: '$bookingInfo.totalPrice' },
-          totalDeposit: { $sum: '$bookingInfo.depositAmount' }
-        }
+          totalRevenue: { $sum: "$bookingInfo.totalPrice" },
+          totalDeposit: { $sum: "$bookingInfo.depositAmount" },
+        },
       },
       {
         $project: {
           _id: 0,
-          fieldTypeID: '$_id.fieldTypeID',
-          typeName: '$_id.typeName',
-          count: '$count',
-          totalRevenue: '$totalRevenue',
-          totalDeposit: '$totalDeposit'
-        }
-      }
+          fieldTypeID: "$_id.fieldTypeID",
+          typeName: "$_id.typeName",
+          count: "$count",
+          totalRevenue: "$totalRevenue",
+          totalDeposit: "$totalDeposit",
+        },
+      },
     ]);
 
     // Format booking status breakdown
     const statusBreakdown = {};
-    bookingStatusBreakdown.forEach(item => {
+    bookingStatusBreakdown.forEach((item) => {
       statusBreakdown[item._id] = item.count;
     });
 
     // Format payment status breakdown
     const paymentBreakdown = {};
-    paymentStatusBreakdown.forEach(item => {
+    paymentStatusBreakdown.forEach((item) => {
       paymentBreakdown[item._id] = item.count;
     });
 
@@ -188,38 +188,38 @@ const getDashboardStats = async () => {
         totalFields,
         totalCustomers,
         totalFeedbacks,
-        totalBookings
+        totalBookings,
       },
       // Booking statistics
       bookingStats: {
         total: totalBookings,
         statusBreakdown: statusBreakdown,
-        paymentBreakdown: paymentBreakdown
+        paymentBreakdown: paymentBreakdown,
       },
       // Revenue statistics
       revenueStats: revenueStats[0] || {
         totalRevenue: 0,
         totalDeposit: 0,
-        totalPaidRevenue: 0
+        totalPaidRevenue: 0,
       },
       // Feedback statistics
       feedbackStats: {
         ratingBreakdown: feedbackStats,
         averageRating: avgRating[0]?.averageRating || 0,
-        totalFeedbacks
+        totalFeedbacks,
       },
       // Trend data - by month
       revenueByMonth: bookingsByMonth,
       // Trend data - by week
       revenueByWeek: bookingsByWeek,
       // Revenue breakdown - by field type
-      revenueByFieldType: revenueByFieldType
+      revenueByFieldType: revenueByFieldType,
     };
   } catch (error) {
     throw {
       statusCode: error.statusCode || 500,
-      message: error.message || 'Error retrieving dashboard statistics',
-      error: error.message
+      message: error.message || "Error retrieving dashboard statistics",
+      error: error.message,
     };
   }
 };
@@ -232,14 +232,14 @@ const getBookingStatusBreakdown = async () => {
     const statusBreakdown = await Booking.aggregate([
       {
         $group: {
-          _id: '$status',
-          count: { $sum: 1 }
-        }
-      }
+          _id: "$status",
+          count: { $sum: 1 },
+        },
+      },
     ]);
 
     const result = {};
-    statusBreakdown.forEach(item => {
+    statusBreakdown.forEach((item) => {
       result[item._id] = item.count;
     });
 
@@ -247,8 +247,8 @@ const getBookingStatusBreakdown = async () => {
   } catch (error) {
     throw {
       statusCode: error.statusCode || 500,
-      message: 'Error retrieving booking status breakdown',
-      error: error.message
+      message: "Error retrieving booking status breakdown",
+      error: error.message,
     };
   }
 };
@@ -261,14 +261,14 @@ const getPaymentStatusBreakdown = async () => {
     const paymentBreakdown = await Booking.aggregate([
       {
         $group: {
-          _id: '$statusPayment',
-          count: { $sum: 1 }
-        }
-      }
+          _id: "$statusPayment",
+          count: { $sum: 1 },
+        },
+      },
     ]);
 
     const result = {};
-    paymentBreakdown.forEach(item => {
+    paymentBreakdown.forEach((item) => {
       result[item._id] = item.count;
     });
 
@@ -276,8 +276,8 @@ const getPaymentStatusBreakdown = async () => {
   } catch (error) {
     throw {
       statusCode: error.statusCode || 500,
-      message: 'Error retrieving payment status breakdown',
-      error: error.message
+      message: "Error retrieving payment status breakdown",
+      error: error.message,
     };
   }
 };
@@ -291,30 +291,30 @@ const getRevenueByMonth = async () => {
       {
         $match: {
           createdAt: {
-            $gte: new Date(Date.now() - 12 * 30 * 24 * 60 * 60 * 1000)
-          }
-        }
+            $gte: new Date(Date.now() - 12 * 30 * 24 * 60 * 60 * 1000),
+          },
+        },
       },
       {
         $group: {
           _id: {
-            year: { $year: '$createdAt' },
-            month: { $month: '$createdAt' }
+            year: { $year: "$createdAt" },
+            month: { $month: "$createdAt" },
           },
           count: { $sum: 1 },
-          revenue: { $sum: '$totalPrice' },
-          deposit: { $sum: '$depositAmount' }
-        }
+          revenue: { $sum: "$totalPrice" },
+          deposit: { $sum: "$depositAmount" },
+        },
       },
-      { $sort: { '_id.year': 1, '_id.month': 1 } }
+      { $sort: { "_id.year": 1, "_id.month": 1 } },
     ]);
 
     return data;
   } catch (error) {
     throw {
       statusCode: error.statusCode || 500,
-      message: 'Error retrieving revenue by month',
-      error: error.message
+      message: "Error retrieving revenue by month",
+      error: error.message,
     };
   }
 };
@@ -328,30 +328,30 @@ const getRevenueByWeek = async () => {
       {
         $match: {
           createdAt: {
-            $gte: new Date(Date.now() - 16 * 7 * 24 * 60 * 60 * 1000)
-          }
-        }
+            $gte: new Date(Date.now() - 16 * 7 * 24 * 60 * 60 * 1000),
+          },
+        },
       },
       {
         $group: {
           _id: {
-            isoYear: { $isoWeekYear: '$createdAt' },
-            week: { $isoWeek: '$createdAt' }
+            isoYear: { $isoWeekYear: "$createdAt" },
+            week: { $isoWeek: "$createdAt" },
           },
           count: { $sum: 1 },
-          revenue: { $sum: '$totalPrice' },
-          deposit: { $sum: '$depositAmount' }
-        }
+          revenue: { $sum: "$totalPrice" },
+          deposit: { $sum: "$depositAmount" },
+        },
       },
-      { $sort: { '_id.isoYear': 1, '_id.week': 1 } }
+      { $sort: { "_id.isoYear": 1, "_id.week": 1 } },
     ]);
 
     return data;
   } catch (error) {
     throw {
       statusCode: error.statusCode || 500,
-      message: 'Error retrieving revenue by week',
-      error: error.message
+      message: "Error retrieving revenue by week",
+      error: error.message,
     };
   }
 };
@@ -365,48 +365,48 @@ const getRevenueByFieldType = async (categoryName = null) => {
     const pipeline = [
       {
         $lookup: {
-          from: 'bookings',
-          localField: 'bookingID',
-          foreignField: '_id',
-          as: 'bookingInfo'
-        }
+          from: "bookings",
+          localField: "bookingID",
+          foreignField: "_id",
+          as: "bookingInfo",
+        },
       },
-      { $unwind: '$bookingInfo' },
+      { $unwind: "$bookingInfo" },
       {
         $lookup: {
-          from: 'fields',
-          localField: 'fieldID',
-          foreignField: '_id',
-          as: 'fieldInfo'
-        }
+          from: "fields",
+          localField: "fieldID",
+          foreignField: "_id",
+          as: "fieldInfo",
+        },
       },
-      { $unwind: '$fieldInfo' },
+      { $unwind: "$fieldInfo" },
       {
         $lookup: {
-          from: 'fieldtypes',
-          localField: 'fieldInfo.fieldTypeID',
-          foreignField: '_id',
-          as: 'fieldTypeInfo'
-        }
+          from: "fieldtypes",
+          localField: "fieldInfo.fieldTypeID",
+          foreignField: "_id",
+          as: "fieldTypeInfo",
+        },
       },
-      { $unwind: '$fieldTypeInfo' },
+      { $unwind: "$fieldTypeInfo" },
       {
         $lookup: {
-          from: 'categories',
-          localField: 'fieldTypeInfo.categoryID',
-          foreignField: '_id',
-          as: 'categoryInfo'
-        }
+          from: "categories",
+          localField: "fieldTypeInfo.categoryID",
+          foreignField: "_id",
+          as: "categoryInfo",
+        },
       },
-      { $unwind: '$categoryInfo' }
+      { $unwind: "$categoryInfo" },
     ];
 
     // Add filter by category name if provided
     if (categoryName) {
       pipeline.push({
         $match: {
-          'categoryInfo.categoryName': categoryName
-        }
+          "categoryInfo.categoryName": categoryName,
+        },
       });
     }
 
@@ -414,28 +414,28 @@ const getRevenueByFieldType = async (categoryName = null) => {
       {
         $group: {
           _id: {
-            fieldTypeID: '$fieldTypeInfo._id',
-            typeName: '$fieldTypeInfo.typeName',
-            categoryID: '$categoryInfo._id',
-            categoryName: '$categoryInfo.categoryName'
+            fieldTypeID: "$fieldTypeInfo._id",
+            typeName: "$fieldTypeInfo.typeName",
+            categoryID: "$categoryInfo._id",
+            categoryName: "$categoryInfo.categoryName",
           },
           count: { $sum: 1 },
-          totalRevenue: { $sum: '$bookingInfo.totalPrice' },
-          totalDeposit: { $sum: '$bookingInfo.depositAmount' }
-        }
+          totalRevenue: { $sum: "$bookingInfo.totalPrice" },
+          totalDeposit: { $sum: "$bookingInfo.depositAmount" },
+        },
       },
       {
         $project: {
           _id: 0,
-          fieldTypeID: '$_id.fieldTypeID',
-          typeName: '$_id.typeName',
-          categoryID: '$_id.categoryID',
-          categoryName: '$_id.categoryName',
-          count: '$count',
-          totalRevenue: '$totalRevenue',
-          totalDeposit: '$totalDeposit'
-        }
-      }
+          fieldTypeID: "$_id.fieldTypeID",
+          typeName: "$_id.typeName",
+          categoryID: "$_id.categoryID",
+          categoryName: "$_id.categoryName",
+          count: "$count",
+          totalRevenue: "$totalRevenue",
+          totalDeposit: "$totalDeposit",
+        },
+      },
     );
 
     const data = await BookingDetail.aggregate(pipeline);
@@ -444,8 +444,8 @@ const getRevenueByFieldType = async (categoryName = null) => {
   } catch (error) {
     throw {
       statusCode: error.statusCode || 500,
-      message: 'Error retrieving revenue by field type',
-      error: error.message
+      message: "Error retrieving revenue by field type",
+      error: error.message,
     };
   }
 };
@@ -458,41 +458,41 @@ const getTopFields = async (limit = 10) => {
     const data = await BookingDetail.aggregate([
       {
         $lookup: {
-          from: 'bookings',
-          localField: 'bookingID',
-          foreignField: '_id',
-          as: 'bookingInfo'
-        }
+          from: "bookings",
+          localField: "bookingID",
+          foreignField: "_id",
+          as: "bookingInfo",
+        },
       },
-      { $unwind: '$bookingInfo' },
+      { $unwind: "$bookingInfo" },
       {
         $lookup: {
-          from: 'fields',
-          localField: 'fieldID',
-          foreignField: '_id',
-          as: 'fieldInfo'
-        }
+          from: "fields",
+          localField: "fieldID",
+          foreignField: "_id",
+          as: "fieldInfo",
+        },
       },
-      { $unwind: '$fieldInfo' },
+      { $unwind: "$fieldInfo" },
       {
         $group: {
-          _id: '$fieldInfo._id',
-          fieldName: { $first: '$fieldInfo.fieldName' },
-          hourlyPrice: { $first: '$fieldInfo.hourlyPrice' },
-          totalRevenue: { $sum: '$bookingInfo.totalPrice' },
-          bookingCount: { $sum: 1 }
-        }
+          _id: "$fieldInfo._id",
+          fieldName: { $first: "$fieldInfo.fieldName" },
+          hourlyPrice: { $first: "$fieldInfo.hourlyPrice" },
+          totalRevenue: { $sum: "$bookingInfo.totalPrice" },
+          bookingCount: { $sum: 1 },
+        },
       },
       { $sort: { totalRevenue: -1 } },
-      { $limit: limit }
+      { $limit: limit },
     ]);
 
     return data;
   } catch (error) {
     throw {
       statusCode: error.statusCode || 500,
-      message: 'Error retrieving top fields',
-      error: error.message
+      message: "Error retrieving top fields",
+      error: error.message,
     };
   }
 };
@@ -505,32 +505,32 @@ const getTopCustomers = async (limit = 10) => {
     const data = await Booking.aggregate([
       {
         $lookup: {
-          from: 'customers',
-          localField: 'customerID',
-          foreignField: '_id',
-          as: 'customerInfo'
-        }
+          from: "customers",
+          localField: "customerID",
+          foreignField: "_id",
+          as: "customerInfo",
+        },
       },
-      { $unwind: '$customerInfo' },
+      { $unwind: "$customerInfo" },
       {
         $group: {
-          _id: '$customerInfo._id',
-          customerName: { $first: '$customerInfo.customerName' },
-          email: { $first: '$customerInfo.email' },
-          totalSpent: { $sum: '$totalPrice' },
-          bookingCount: { $sum: 1 }
-        }
+          _id: "$customerInfo._id",
+          customerName: { $first: "$customerInfo.name" },
+          email: { $first: "$customerInfo.email" },
+          totalSpent: { $sum: "$totalPrice" },
+          bookingCount: { $sum: 1 },
+        },
       },
       { $sort: { totalSpent: -1 } },
-      { $limit: limit }
+      { $limit: limit },
     ]);
 
     return data;
   } catch (error) {
     throw {
       statusCode: error.statusCode || 500,
-      message: 'Error retrieving top customers',
-      error: error.message
+      message: "Error retrieving top customers",
+      error: error.message,
     };
   }
 };
@@ -543,43 +543,43 @@ const getRecentBookings = async (limit = 20) => {
     const data = await Booking.aggregate([
       {
         $lookup: {
-          from: 'customers',
-          localField: 'customerID',
-          foreignField: '_id',
-          as: 'customerInfo'
-        }
+          from: "customers",
+          localField: "customerID",
+          foreignField: "_id",
+          as: "customerInfo",
+        },
       },
-      { $unwind: '$customerInfo' },
+      { $unwind: "$customerInfo" },
       {
         $lookup: {
-          from: 'bookingdetails',
-          localField: '_id',
-          foreignField: 'bookingID',
-          as: 'bookingDetails'
-        }
+          from: "bookingdetails",
+          localField: "_id",
+          foreignField: "bookingID",
+          as: "bookingDetails",
+        },
       },
       {
         $project: {
           _id: 1,
-          customerName: '$customerInfo.customerName',
-          email: '$customerInfo.email',
+          customerName: "$customerInfo.name",
+          email: "$customerInfo.email",
           totalPrice: 1,
           status: 1,
           statusPayment: 1,
           createdAt: 1,
-          bookingCount: { $size: '$bookingDetails' }
-        }
+          bookingCount: { $size: "$bookingDetails" },
+        },
       },
       { $sort: { createdAt: -1 } },
-      { $limit: limit }
+      { $limit: limit },
     ]);
 
     return data;
   } catch (error) {
     throw {
       statusCode: error.statusCode || 500,
-      message: 'Error retrieving recent bookings',
-      error: error.message
+      message: "Error retrieving recent bookings",
+      error: error.message,
     };
   }
 };
@@ -598,15 +598,15 @@ const getSummaryStats = async () => {
       {
         $group: {
           _id: null,
-          totalRevenue: { $sum: '$totalPrice' },
-          totalDeposit: { $sum: '$depositAmount' },
+          totalRevenue: { $sum: "$totalPrice" },
+          totalDeposit: { $sum: "$depositAmount" },
           totalPaidRevenue: {
             $sum: {
-              $cond: [{ $eq: ['$statusPayment', 'Paid'] }, '$totalPrice', 0]
-            }
-          }
-        }
-      }
+              $cond: [{ $eq: ["$statusPayment", "Paid"] }, "$totalPrice", 0],
+            },
+          },
+        },
+      },
     ]);
 
     return {
@@ -617,14 +617,14 @@ const getSummaryStats = async () => {
       revenueStats: revenueStats[0] || {
         totalRevenue: 0,
         totalDeposit: 0,
-        totalPaidRevenue: 0
-      }
+        totalPaidRevenue: 0,
+      },
     };
   } catch (error) {
     throw {
       statusCode: error.statusCode || 500,
-      message: 'Error retrieving summary stats',
-      error: error.message
+      message: "Error retrieving summary stats",
+      error: error.message,
     };
   }
 };
@@ -634,14 +634,14 @@ const getSummaryStats = async () => {
  */
 const getCategories = async () => {
   try {
-    const Category = require('../../models/Category');
-    const categories = await Category.find().select('_id categoryName');
+    const Category = require("../../models/Category");
+    const categories = await Category.find().select("_id categoryName");
     return categories;
   } catch (error) {
     throw {
       statusCode: error.statusCode || 500,
-      message: 'Error retrieving categories',
-      error: error.message
+      message: "Error retrieving categories",
+      error: error.message,
     };
   }
 };
@@ -654,70 +654,70 @@ const getRevenueByCategory = async () => {
     const data = await BookingDetail.aggregate([
       {
         $lookup: {
-          from: 'bookings',
-          localField: 'bookingID',
-          foreignField: '_id',
-          as: 'bookingInfo'
-        }
+          from: "bookings",
+          localField: "bookingID",
+          foreignField: "_id",
+          as: "bookingInfo",
+        },
       },
-      { $unwind: '$bookingInfo' },
+      { $unwind: "$bookingInfo" },
       {
         $lookup: {
-          from: 'fields',
-          localField: 'fieldID',
-          foreignField: '_id',
-          as: 'fieldInfo'
-        }
+          from: "fields",
+          localField: "fieldID",
+          foreignField: "_id",
+          as: "fieldInfo",
+        },
       },
-      { $unwind: '$fieldInfo' },
+      { $unwind: "$fieldInfo" },
       {
         $lookup: {
-          from: 'fieldtypes',
-          localField: 'fieldInfo.fieldTypeID',
-          foreignField: '_id',
-          as: 'fieldTypeInfo'
-        }
+          from: "fieldtypes",
+          localField: "fieldInfo.fieldTypeID",
+          foreignField: "_id",
+          as: "fieldTypeInfo",
+        },
       },
-      { $unwind: '$fieldTypeInfo' },
+      { $unwind: "$fieldTypeInfo" },
       {
         $lookup: {
-          from: 'categories',
-          localField: 'fieldTypeInfo.categoryID',
-          foreignField: '_id',
-          as: 'categoryInfo'
-        }
+          from: "categories",
+          localField: "fieldTypeInfo.categoryID",
+          foreignField: "_id",
+          as: "categoryInfo",
+        },
       },
-      { $unwind: '$categoryInfo' },
+      { $unwind: "$categoryInfo" },
       {
         $group: {
           _id: {
-            categoryID: '$categoryInfo._id',
-            categoryName: '$categoryInfo.categoryName'
+            categoryID: "$categoryInfo._id",
+            categoryName: "$categoryInfo.categoryName",
           },
           count: { $sum: 1 },
-          totalRevenue: { $sum: '$bookingInfo.totalPrice' },
-          totalDeposit: { $sum: '$bookingInfo.depositAmount' }
-        }
+          totalRevenue: { $sum: "$bookingInfo.totalPrice" },
+          totalDeposit: { $sum: "$bookingInfo.depositAmount" },
+        },
       },
       {
         $project: {
           _id: 0,
-          categoryID: '$_id.categoryID',
-          categoryName: '$_id.categoryName',
-          count: '$count',
-          totalRevenue: '$totalRevenue',
-          totalDeposit: '$totalDeposit'
-        }
+          categoryID: "$_id.categoryID",
+          categoryName: "$_id.categoryName",
+          count: "$count",
+          totalRevenue: "$totalRevenue",
+          totalDeposit: "$totalDeposit",
+        },
       },
-      { $sort: { totalRevenue: -1 } }
+      { $sort: { totalRevenue: -1 } },
     ]);
 
     return data;
   } catch (error) {
     throw {
       statusCode: error.statusCode || 500,
-      message: 'Error retrieving revenue by category',
-      error: error.message
+      message: "Error retrieving revenue by category",
+      error: error.message,
     };
   }
 };
@@ -734,5 +734,5 @@ module.exports = {
   getRecentBookings,
   getSummaryStats,
   getCategories,
-  getRevenueByCategory
+  getRevenueByCategory,
 };
