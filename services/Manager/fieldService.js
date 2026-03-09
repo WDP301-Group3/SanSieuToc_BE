@@ -36,30 +36,6 @@ const checkDuplicateFieldName = async (managerId, fieldName, excludeFieldId = nu
 };
 
 /**
- * Check if field name is duplicate at the same address for the same manager
- * Allows multiple fields at same address, but not same field name at same address
- * @param {ObjectId} managerId - Manager ID
- * @param {string} fieldName - Field name to check
- * @param {string} address - Address to check
- * @param {ObjectId} excludeFieldId - Field ID to exclude (for update)
- */
-const checkDuplicateFieldAtAddress = async (managerId, fieldName, address, excludeFieldId = null) => {
-    const query = {
-        managerID: managerId,
-        fieldName: { $regex: new RegExp(`^${fieldName.trim()}$`, 'i') },
-        address: { $regex: new RegExp(`^${address.trim()}$`, 'i') },
-        status: { $ne: 'Deleted' }
-    };
-
-    if (excludeFieldId) {
-        query._id = { $ne: excludeFieldId };
-    }
-
-    const existingField = await Field.findOne(query);
-    return existingField !== null;
-};
-
-/**
  * Check for active bookings that conflict with time changes
  * @param {ObjectId} fieldId - Field ID
  * @param {string} newOpeningTime - New opening time (optional)
@@ -202,6 +178,25 @@ const createField = async (managerId, fieldData) => {
         throw { statusCode: 400, message: 'FieldType does not belong to the selected category' };
     }
 
+    // Validate fieldType is appropriate for the category
+    // Football: can ONLY use "Sân 5 người", "Sân 7 người", "Sân 11 người" (NOT Sân tiêu chuẩn)
+    // Other sports: can ONLY use "Sân tiêu chuẩn"
+    if (category.categoryName === 'Football') {
+        if (fieldType.typeName === 'Sân tiêu chuẩn') {
+            throw { 
+                statusCode: 400, 
+                message: 'Football fields must use player-specific types (Sân 5 người, Sân 7 người, or Sân 11 người), not "Sân tiêu chuẩn"' 
+            };
+        }
+    } else {
+        if (fieldType.typeName !== 'Sân tiêu chuẩn') {
+            throw { 
+                statusCode: 400, 
+                message: `${category.categoryName} fields can only use "Sân tiêu chuẩn". Player-specific types (5, 7, 11 người) are only for Football` 
+            };
+        }
+    }
+
     // Validate fieldName
     const fieldNameValidation = validateFieldName(fieldName);
     if (!fieldNameValidation.isValid) {
@@ -218,12 +213,6 @@ const createField = async (managerId, fieldData) => {
     const addressValidation = validateFieldAddress(address);
     if (!addressValidation.isValid) {
         throw { statusCode: 400, message: addressValidation.message };
-    }
-
-    // Check duplicate field name at same address for same manager
-    const isDuplicateFieldAtAddress = await checkDuplicateFieldAtAddress(managerId, fieldName, address);
-    if (isDuplicateFieldAtAddress) {
-        throw { statusCode: 400, message: 'A field with this name already exists at this address' };
     }
 
     // Validate description
@@ -392,16 +381,6 @@ const updateField = async (managerId, fieldId, updateData) => {
         const addressValidation = validateFieldAddress(address);
         if (!addressValidation.isValid) {
             throw { statusCode: 400, message: addressValidation.message };
-        }
-    }
-
-    // Check duplicate field name at same address when either fieldName or address is updated
-    if (fieldName || address) {
-        const checkFieldName = fieldName || existingField.fieldName;
-        const checkAddress = address || existingField.address;
-        const isDuplicateFieldAtAddress = await checkDuplicateFieldAtAddress(managerId, checkFieldName, checkAddress, fieldId);
-        if (isDuplicateFieldAtAddress) {
-            throw { statusCode: 400, message: 'A field with this name already exists at this address' };
         }
     }
 

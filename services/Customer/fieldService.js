@@ -100,9 +100,7 @@ const getAllFields = async () => {
  * Service: Get all field types (public)
  */
 const getAllFieldTypes = async () => {
-  const fieldTypes = await FieldType.find()
-    .populate('categoryID')
-    .sort({ typeName: 1 });
+  const fieldTypes = await FieldType.find().sort({ typeName: 1 });
   return { fieldTypes };
 };
 
