@@ -15,15 +15,17 @@ const {
 } = require('../../utils/validators');
 
 /**
- * Check if field name is duplicate for the same manager
+ * Check if field name is duplicate for the same manager at the same address
  * @param {ObjectId} managerId - Manager ID
  * @param {string} fieldName - Field name to check
+ * @param {string} address - Field address to check
  * @param {ObjectId} excludeFieldId - Field ID to exclude (for update)
  */
-const checkDuplicateFieldName = async (managerId, fieldName, excludeFieldId = null) => {
+const checkDuplicateFieldName = async (managerId, fieldName, address, excludeFieldId = null) => {
     const query = {
         managerID: managerId,
         fieldName: { $regex: new RegExp(`^${fieldName.trim()}$`, 'i') },
+        address: { $regex: new RegExp(`^${address.trim()}$`, 'i') },
         status: { $ne: 'Deleted' }
     };
 
@@ -204,9 +206,9 @@ const createField = async (managerId, fieldData) => {
     }
 
     // Check duplicate fieldName for same manager
-    const isDuplicateName = await checkDuplicateFieldName(managerId, fieldName);
+    const isDuplicateName = await checkDuplicateFieldName(managerId, fieldName, address);
     if (isDuplicateName) {
-        throw { statusCode: 400, message: 'A field with this name already exists for your account' };
+        throw { statusCode: 400, message: 'Đã tồn tại sân có cùng tên và địa chỉ trong tài khoản của bạn' };
     }
 
     // Validate address
@@ -247,7 +249,7 @@ const createField = async (managerId, fieldData) => {
         throw { statusCode: 400, message: utilitiesValidation.message };
     }
 
-    // Validate images
+    // Validate images (already Cloudinary URLs from controller)
     const imagesValidation = validateFieldImages(image);
     if (!imagesValidation.isValid) {
         throw { statusCode: 400, message: imagesValidation.message };
@@ -370,9 +372,9 @@ const updateField = async (managerId, fieldId, updateData) => {
         }
 
         // Check duplicate fieldName for same manager (excluding current field)
-        const isDuplicateName = await checkDuplicateFieldName(managerId, fieldName, fieldId);
+        const isDuplicateName = await checkDuplicateFieldName(managerId, fieldName, address || existingField.address, fieldId);
         if (isDuplicateName) {
-            throw { statusCode: 400, message: 'A field with this name already exists for your account' };
+            throw { statusCode: 400, message: 'Đã tồn tại sân có cùng tên và địa chỉ trong tài khoản của bạn' };
         }
     }
 
