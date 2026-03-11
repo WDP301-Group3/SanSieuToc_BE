@@ -1,4 +1,3 @@
-const mongoose = require('mongoose');
 const Field = require('../../models/Field');
 const Booking = require('../../models/Booking');
 const BookingDetail = require('../../models/BookingDetail');
@@ -143,9 +142,7 @@ const createBooking = async (customerId, bookingData) => {
     throw { statusCode: 400, message: 'Không thể đặt sân cho ngày đã qua' };
   }
 
-  // Start transaction
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  let booking = null;
 
   try {
     const bookingDetailsToCreate = [];
@@ -191,7 +188,7 @@ const createBooking = async (customerId, bookingData) => {
         }).populate({
           path: 'bookingID',
           match: { status: { $ne: 'Cancelled' } }
-        }).session(session);
+        });
 
         if (existingBooking && existingBooking.bookingID) {
           throw {
@@ -218,7 +215,7 @@ const createBooking = async (customerId, bookingData) => {
     const depositAmount = calculateDepositAmount(totalPrice);
 
     // Create booking (master record)
-    const booking = new Booking({
+    booking = new Booking({
       customerID: customerId,
       totalPrice: depositAmount, // Initially only deposit
       depositAmount: depositAmount,
@@ -226,7 +223,7 @@ const createBooking = async (customerId, bookingData) => {
       statusPayment: 'Unpaid'
     });
 
-    await booking.save({ session });
+    await booking.save();
 
     // Add bookingID to all details
     bookingDetailsToCreate.forEach(detail => {
@@ -234,10 +231,7 @@ const createBooking = async (customerId, bookingData) => {
     });
 
     // Create booking details
-    const createdDetails = await BookingDetail.insertMany(bookingDetailsToCreate, { session });
-
-    // Commit transaction
-    await session.commitTransaction();
+    const createdDetails = await BookingDetail.insertMany(bookingDetailsToCreate);
 
     // Send confirmation email (không throw error nếu email fail)
     try {
@@ -247,7 +241,7 @@ const createBooking = async (customerId, bookingData) => {
         await sendBookingConfirmationEmail(customer, booking, createdDetails, field);
       }
     } catch (emailError) {
-      console.error('Error sending booking confirmation email:', emailError);
+      console.error('Error sending booking confirmation email:', emailError.message || emailError);
     }
 
     return {
@@ -272,10 +266,12 @@ const createBooking = async (customerId, bookingData) => {
     };
 
   } catch (error) {
-    await session.abortTransaction();
+    // Manual cleanup: remove booking and its details if booking was already saved
+    if (booking && booking._id) {
+      await Booking.deleteOne({ _id: booking._id }).catch(() => {});
+      await BookingDetail.deleteMany({ bookingID: booking._id }).catch(() => {});
+    }
     throw error;
-  } finally {
-    session.endSession();
   }
 };
 
