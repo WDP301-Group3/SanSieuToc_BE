@@ -72,8 +72,33 @@ const confirmPayment = async (req, res) => {
   }
 };
 
+/**
+ * Cancel booking (Pending → Cancelled) — deposit not received
+ */
+const cancelBooking = async (req, res) => {
+  try {
+    const managerId = req.userId;
+    const { bookingId } = req.params;
+
+    const result = await bookingService.cancelBooking(managerId, bookingId);
+
+    res.status(200).json({
+      success: true,
+      message: result.message,
+      data: result.booking
+    });
+  } catch (error) {
+    console.error('Error cancelling booking:', error);
+    res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || 'Lỗi server'
+    });
+  }
+};
+
 module.exports = {
   getAllBookings,
   confirmDeposit,
-  confirmPayment
+  confirmPayment,
+  cancelBooking
 };

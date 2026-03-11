@@ -68,8 +68,28 @@ const deleteImage = async (imageUrl) => {
   }
 };
 
+/**
+ * Upload image to Cloudinary from buffer (multer memoryStorage)
+ * @param {Buffer} buffer - File buffer from multer
+ * @param {string} folder - Folder name on Cloudinary
+ * @returns {Promise<string>} - Secure URL of uploaded image
+ */
+const uploadImageBuffer = (buffer, folder = 'uploads') => {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder, resource_type: 'image', allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp'] },
+      (error, result) => {
+        if (error) reject(new Error(`Cloudinary upload failed: ${error.message}`));
+        else resolve(result.secure_url);
+      }
+    );
+    stream.end(buffer);
+  });
+};
+
 module.exports = {
   uploadImageBase64,
+  uploadImageBuffer,
   deleteImage,
   cloudinary
 };

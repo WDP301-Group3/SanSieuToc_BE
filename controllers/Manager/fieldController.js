@@ -1,11 +1,28 @@
 const fieldService = require('../../services/Manager/fieldService');
+const { uploadImageBuffer } = require('../../utils/cloudinaryConfig');
 
 /**
  * Controller: Create new field
  */
 const createField = async (req, res) => {
     try {
-        const result = await fieldService.createField(req.userId, req.body);
+        // Upload new image files to Cloudinary
+        let imageUrls = [];
+        if (req.files && req.files.length > 0) {
+            imageUrls = await Promise.all(
+                req.files.map((f) => uploadImageBuffer(f.buffer, 'fields'))
+            );
+        }
+
+        const fieldData = {
+            ...req.body,
+            slotDuration: parseInt(req.body.slotDuration, 10),
+            hourlyPrice: parseFloat(req.body.hourlyPrice),
+            utilities: JSON.parse(req.body.utilities || '[]'),
+            image: imageUrls,
+        };
+
+        const result = await fieldService.createField(req.userId, fieldData);
 
         res.status(201).json({
             success: true,
@@ -81,7 +98,28 @@ const getFieldById = async (req, res) => {
  */
 const updateField = async (req, res) => {
     try {
-        const result = await fieldService.updateField(req.userId, req.params.id, req.body);
+        // Upload new image files to Cloudinary
+        let newImageUrls = [];
+        if (req.files && req.files.length > 0) {
+            newImageUrls = await Promise.all(
+                req.files.map((f) => uploadImageBuffer(f.buffer, 'fields'))
+            );
+        }
+
+        // Combine existing Cloudinary URLs + newly uploaded URLs
+        const existingImages = JSON.parse(req.body.existingImages || '[]');
+        const allImages = [...existingImages, ...newImageUrls];
+
+        const fieldData = {
+            ...req.body,
+            ...(req.body.slotDuration !== undefined && { slotDuration: parseInt(req.body.slotDuration, 10) }),
+            ...(req.body.hourlyPrice !== undefined && { hourlyPrice: parseFloat(req.body.hourlyPrice) }),
+            ...(req.body.utilities !== undefined && { utilities: JSON.parse(req.body.utilities || '[]') }),
+            ...(allImages.length > 0 && { image: allImages }),
+        };
+        delete fieldData.existingImages;
+
+        const result = await fieldService.updateField(req.userId, req.params.id, fieldData);
 
         res.status(200).json({
             success: true,
