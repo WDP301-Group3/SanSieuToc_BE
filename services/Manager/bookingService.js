@@ -233,8 +233,42 @@ const confirmPayment = async (managerId, bookingId) => {
   };
 };
 
+/**
+ * Cancel a booking (Pending → Cancelled) when deposit not received
+ */
+const cancelBooking = async (managerId, bookingId) => {
+  const booking = await Booking.findById(bookingId).populate('customerID');
+  if (!booking) throw { statusCode: 404, message: 'Booking không tồn tại' };
+
+  const bookingDetails = await BookingDetail.find({ bookingID: bookingId }).populate('fieldID');
+  if (bookingDetails.length === 0) throw { statusCode: 404, message: 'Booking không có chi tiết' };
+
+  const field = bookingDetails[0].fieldID;
+  if (field.managerID.toString() !== managerId.toString())
+    throw { statusCode: 403, message: 'Bạn không có quyền hủy booking này' };
+
+  if (booking.status !== 'Pending')
+    throw { statusCode: 400, message: 'Chỉ có thể hủy booking đang ở trạng thái Pending' };
+
+  booking.status = 'Cancelled';
+  booking.totalPrice = 0;
+  booking.depositAmount = 0;
+  await booking.save();
+
+  await BookingDetail.updateMany(
+    { bookingID: bookingId, status: 'Active' },
+    { status: 'Cancelled' }
+  );
+
+  return {
+    message: 'Đã hủy booking do không nhận được tiền cọc',
+    booking: { id: booking._id, status: booking.status, statusPayment: booking.statusPayment },
+  };
+};
+
 module.exports = {
   getAllBookings,
   confirmDeposit,
   confirmPayment,
+  cancelBooking,
 };

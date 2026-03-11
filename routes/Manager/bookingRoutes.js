@@ -15,6 +15,9 @@ router.put('/bookings/:bookingId/confirm-deposit', verifyToken, isManager, manag
 // Confirm payment received (Unpaid → Paid)
 router.put('/bookings/:bookingId/confirm-payment', verifyToken, isManager, managerBookingController.confirmPayment);
 
+// Cancel booking (Pending → Cancelled) — deposit not received
+router.put('/bookings/:bookingId/cancel', verifyToken, isManager, managerBookingController.cancelBooking);
+
 // Update booking detail status
 router.put('/booking-details/:bookingDetailId/status', verifyToken, isManager, customerBookingController.updateBookingDetailStatus);
 

@@ -284,8 +284,8 @@ const createBooking = async (customerId, bookingData) => {
  */
 const updateBookingDetailStatus = async (bookingDetailId, newStatus, managerId) => {
   // Validate status
-  if (!['Active', 'Cancelled', 'Completed'].includes(newStatus)) {
-    throw { statusCode: 400, message: 'Trạng thái không hợp lệ' };
+  if (!['Cancelled', 'Completed'].includes(newStatus)) {
+    throw { statusCode: 400, message: 'Trạng thái không hợp lệ. Chỉ chấp nhận Cancelled hoặc Completed' };
   }
 
   const bookingDetail = await BookingDetail.findById(bookingDetailId)
@@ -302,6 +302,20 @@ const updateBookingDetailStatus = async (bookingDetailId, newStatus, managerId) 
     throw { statusCode: 403, message: 'Bạn không có quyền cập nhật booking này' };
   }
 
+  // Booking phải ở trạng thái Confirmed mới được cập nhật detail
+  if (bookingDetail.bookingID.status !== 'Confirmed') {
+    throw { statusCode: 400, message: 'Chỉ có thể cập nhật slot khi booking đã được xác nhận (Confirmed)' };
+  }
+
+  // Detail phải đang Active mới được chuyển sang Cancelled hoặc Completed
+  if (bookingDetail.status !== 'Active') {
+    throw { statusCode: 400, message: 'Chỉ có thể cập nhật slot đang ở trạng thái Active' };
+  }
+
+  if (!['Cancelled', 'Completed'].includes(newStatus)) {
+    throw { statusCode: 400, message: 'Chỉ được chuyển trạng thái slot sang Cancelled hoặc Completed' };
+  }
+
   const oldStatus = bookingDetail.status;
   bookingDetail.status = newStatus;
   await bookingDetail.save();
@@ -315,9 +329,11 @@ const updateBookingDetailStatus = async (bookingDetailId, newStatus, managerId) 
     const customer = await Customer.findById(bookingDetail.bookingID.customerID);
     if (customer) {
       await sendStatusChangeEmail(customer, bookingDetail, oldStatus, newStatus, field);
+    } else {
+      console.warn('⚠️ Customer not found for email notification, bookingDetailId:', bookingDetailId);
     }
   } catch (emailError) {
-    console.error('Error sending status change email:', emailError);
+    console.error('❌ Error sending status change email:', emailError.message || emailError);
   }
 
   return {
@@ -410,7 +426,7 @@ const autoCompleteBookings = async () => {
         await sendStatusChangeEmail(customer, detail, oldStatus, 'Completed', detail.fieldID);
       }
     } catch (emailError) {
-      console.error('Error sending auto-complete email:', emailError);
+      console.error('❌ Error sending auto-complete email:', emailError.message || emailError);
     }
   }
 
@@ -709,7 +725,7 @@ const cancelBooking = async (customerId, bookingId) => {
         await sendStatusChangeEmail(customer, detail, oldDetailStatus, 'Cancelled', field);
       }
     } catch (emailError) {
-      console.error('Error sending cancellation email:', emailError);
+      console.error('❌ Error sending cancellation email:', emailError.message || emailError);
     }
   }
 
