@@ -44,9 +44,9 @@ const getFieldAvailability = async (fieldId, date) => {
   // Generate full datetime slots for the date
   const dateTimeSlots = generateDateTimeSlots(date, timeSlots);
 
-  // Get booked slots for this date
-  const startOfDay = new Date(`${date}T00:00:00.000Z`);
-  const endOfDay = new Date(`${date}T23:59:59.999Z`);
+  // Get booked slots for this date (local time boundaries)
+  const startOfDay = new Date(`${date}T00:00:00`);
+  const endOfDay = new Date(`${date}T23:59:59.999`);
 
   const bookedDetails = await BookingDetail.find({
     fieldID: fieldId,
@@ -154,15 +154,9 @@ const createBooking = async (customerId, bookingData) => {
 
       // For each selected slot
       for (const slot of selectedSlots) {
-        // Parse slot times
-        const [startHour, startMin] = slot.startTime.split(':').map(Number);
-        const [endHour, endMin] = slot.endTime.split(':').map(Number);
-
-        const slotStartTime = new Date(date);
-        slotStartTime.setHours(startHour, startMin, 0, 0);
-
-        const slotEndTime = new Date(date);
-        slotEndTime.setHours(endHour, endMin, 0, 0);
+        // Build local datetimes matching generateDateTimeSlots() format (no Z = local time)
+        const slotStartTime = new Date(`${dateStr}T${slot.startTime}:00`);
+        const slotEndTime = new Date(`${dateStr}T${slot.endTime}:00`);
 
         // Check if slot is in the past
         if (isPastDateTime(slotStartTime)) {

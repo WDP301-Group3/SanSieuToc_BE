@@ -46,8 +46,8 @@ const generateTimeSlots = (openingTime, closingTime, slotDuration, breakTime = 1
  */
 const generateDateTimeSlots = (date, timeSlots) => {
   return timeSlots.map(slot => ({
-    startTime: new Date(`${date}T${slot.startTime}:00.000Z`),
-    endTime: new Date(`${date}T${slot.endTime}:00.000Z`)
+    startTime: new Date(`${date}T${slot.startTime}:00`),
+    endTime: new Date(`${date}T${slot.endTime}:00`)
   }));
 };
 
