@@ -1,4 +1,3 @@
-const mongoose = require('mongoose');
 const Field = require('../../models/Field');
 const Booking = require('../../models/Booking');
 const BookingDetail = require('../../models/BookingDetail');
@@ -45,9 +44,9 @@ const getFieldAvailability = async (fieldId, date) => {
   // Generate full datetime slots for the date
   const dateTimeSlots = generateDateTimeSlots(date, timeSlots);
 
-  // Get booked slots for this date
-  const startOfDay = new Date(`${date}T00:00:00.000Z`);
-  const endOfDay = new Date(`${date}T23:59:59.999Z`);
+  // Get booked slots for this date (local time boundaries)
+  const startOfDay = new Date(`${date}T00:00:00`);
+  const endOfDay = new Date(`${date}T23:59:59.999`);
 
   const bookedDetails = await BookingDetail.find({
     fieldID: fieldId,
@@ -143,9 +142,7 @@ const createBooking = async (customerId, bookingData) => {
     throw { statusCode: 400, message: 'Không thể đặt sân cho ngày đã qua' };
   }
 
-  // Start transaction
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  let booking = null;
 
   try {
     const bookingDetailsToCreate = [];
@@ -157,15 +154,9 @@ const createBooking = async (customerId, bookingData) => {
 
       // For each selected slot
       for (const slot of selectedSlots) {
-        // Parse slot times
-        const [startHour, startMin] = slot.startTime.split(':').map(Number);
-        const [endHour, endMin] = slot.endTime.split(':').map(Number);
-
-        const slotStartTime = new Date(date);
-        slotStartTime.setHours(startHour, startMin, 0, 0);
-
-        const slotEndTime = new Date(date);
-        slotEndTime.setHours(endHour, endMin, 0, 0);
+        // Build local datetimes matching generateDateTimeSlots() format (no Z = local time)
+        const slotStartTime = new Date(`${dateStr}T${slot.startTime}:00`);
+        const slotEndTime = new Date(`${dateStr}T${slot.endTime}:00`);
 
         // Check if slot is in the past
         if (isPastDateTime(slotStartTime)) {
@@ -191,7 +182,7 @@ const createBooking = async (customerId, bookingData) => {
         }).populate({
           path: 'bookingID',
           match: { status: { $ne: 'Cancelled' } }
-        }).session(session);
+        });
 
         if (existingBooking && existingBooking.bookingID) {
           throw {
@@ -218,7 +209,7 @@ const createBooking = async (customerId, bookingData) => {
     const depositAmount = calculateDepositAmount(totalPrice);
 
     // Create booking (master record)
-    const booking = new Booking({
+    booking = new Booking({
       customerID: customerId,
       totalPrice: depositAmount, // Initially only deposit
       depositAmount: depositAmount,
@@ -226,7 +217,7 @@ const createBooking = async (customerId, bookingData) => {
       statusPayment: 'Unpaid'
     });
 
-    await booking.save({ session });
+    await booking.save();
 
     // Add bookingID to all details
     bookingDetailsToCreate.forEach(detail => {
@@ -234,10 +225,7 @@ const createBooking = async (customerId, bookingData) => {
     });
 
     // Create booking details
-    const createdDetails = await BookingDetail.insertMany(bookingDetailsToCreate, { session });
-
-    // Commit transaction
-    await session.commitTransaction();
+    const createdDetails = await BookingDetail.insertMany(bookingDetailsToCreate);
 
     // Send confirmation email (không throw error nếu email fail)
     try {
@@ -247,7 +235,7 @@ const createBooking = async (customerId, bookingData) => {
         await sendBookingConfirmationEmail(customer, booking, createdDetails, field);
       }
     } catch (emailError) {
-      console.error('Error sending booking confirmation email:', emailError);
+      console.error('Error sending booking confirmation email:', emailError.message || emailError);
     }
 
     return {
@@ -272,10 +260,12 @@ const createBooking = async (customerId, bookingData) => {
     };
 
   } catch (error) {
-    await session.abortTransaction();
+    // Manual cleanup: remove booking and its details if booking was already saved
+    if (booking && booking._id) {
+      await Booking.deleteOne({ _id: booking._id }).catch(() => {});
+      await BookingDetail.deleteMany({ bookingID: booking._id }).catch(() => {});
+    }
     throw error;
-  } finally {
-    session.endSession();
   }
 };
 
