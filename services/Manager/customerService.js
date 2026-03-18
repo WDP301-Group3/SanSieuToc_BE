@@ -1,4 +1,48 @@
 const Customer = require('../../models/Customer');
+const Booking = require('../../models/Booking');
+const BookingDetail = require('../../models/BookingDetail');
+
+const getBookingDetailStatsByCustomerIds = async (customerIds) => {
+  if (!Array.isArray(customerIds) || customerIds.length === 0) return new Map();
+
+  const rows = await BookingDetail.aggregate([
+    { $match: { status: { $in: ['Completed', 'Cancelled'] } } },
+    {
+      $lookup: {
+        from: Booking.collection.name,
+        localField: 'bookingID',
+        foreignField: '_id',
+        as: 'booking',
+      },
+    },
+    { $unwind: '$booking' },
+    { $match: { 'booking.customerID': { $in: customerIds } } },
+    {
+      $group: {
+        _id: '$booking.customerID',
+        completedCount: {
+          $sum: {
+            $cond: [{ $eq: ['$status', 'Completed'] }, 1, 0],
+          },
+        },
+        cancelledCount: {
+          $sum: {
+            $cond: [{ $eq: ['$status', 'Cancelled'] }, 1, 0],
+          },
+        },
+      },
+    },
+  ]);
+
+  const map = new Map();
+  for (const row of rows) {
+    map.set(String(row._id), {
+      completedCount: row.completedCount || 0,
+      cancelledCount: row.cancelledCount || 0,
+    });
+  }
+  return map;
+};
 
 /**
  * Service: Get list of customers with optional filters and pagination
@@ -52,10 +96,24 @@ const getCustomers = async (options = {}) => {
       .select('-password')
       .sort(sortObj)
       .skip(skip)
-      .limit(limitNum);
+      .limit(limitNum)
+      .lean();
+
+    // Attach booking stats (count booking details by status)
+    const customerIds = customers.map((c) => c._id);
+    const statsByCustomerId = await getBookingDetailStatsByCustomerIds(customerIds);
+
+    const customersWithStats = customers.map((c) => {
+      const stats = statsByCustomerId.get(String(c._id)) || { completedCount: 0, cancelledCount: 0 };
+      return {
+        ...c,
+        completedCount: stats.completedCount,
+        cancelledCount: stats.cancelledCount,
+      };
+    });
 
     return {
-      data: customers,
+      data: customersWithStats,
       pagination: {
         total,
         page: pageNum,
