@@ -81,7 +81,10 @@ const getFieldDetail = async (fieldId) => {
 /**
  * Service: Get all fields (public - for customers)
  */
+const Feedback = require('../../models/Feedback');
+
 const getAllFields = async () => {
+  // 1. Lấy tất cả fields với populate
   const fields = await Field.find({ status: { $in: ['Available', 'Maintenance'] } })
     .populate({
       path: 'fieldTypeID',
@@ -90,7 +93,60 @@ const getAllFields = async () => {
     .populate('managerID', 'name phone image')
     .sort({ createdAt: -1 });
 
-  return { fields };
+  if (fields.length === 0) return { fields: [] };
+
+  // 2. Lấy tất cả fieldID cần tính rating
+  const fieldIds = fields.map(f => f._id);
+
+  // 3. Aggregate: BookingDetail (fieldID) → Feedback (bookingDetailID) → avg rate
+  //    Một query duy nhất cho tất cả fields
+  const ratingStats = await Feedback.aggregate([
+    {
+      // Join BookingDetail để lấy fieldID
+      $lookup: {
+        from: 'bookingdetails',
+        localField: 'bookingDetailID',
+        foreignField: '_id',
+        as: 'detail'
+      }
+    },
+    { $unwind: '$detail' },
+    {
+      // Chỉ lấy các field trong danh sách hiện tại
+      $match: { 'detail.fieldID': { $in: fieldIds } }
+    },
+    {
+      // Group theo fieldID → tính averageRating và count
+      $group: {
+        _id: '$detail.fieldID',
+        averageRating: { $avg: '$rate' },
+        totalReviews: { $sum: 1 }
+      }
+    }
+  ]);
+
+  // 4. Build lookup map: fieldId → { averageRating, totalReviews }
+  const ratingMap = {};
+  ratingStats.forEach(stat => {
+    ratingMap[stat._id.toString()] = {
+      averageRating: parseFloat(stat.averageRating.toFixed(1)),
+      totalReviews: stat.totalReviews
+    };
+  });
+
+  // 5. Gắn averageRating và totalReviews vào mỗi field
+  const fieldsWithRating = fields.map(f => {
+    const rating = ratingMap[f._id.toString()] || { averageRating: 0, totalReviews: 0 };
+    // Convert Mongoose document sang plain object để có thể thêm field
+    const plain = f.toObject();
+    return {
+      ...plain,
+      averageRating: rating.averageRating,
+      totalReviews: rating.totalReviews
+    };
+  });
+
+  return { fields: fieldsWithRating };
 };
 
 /**
@@ -100,9 +156,7 @@ const getAllFields = async () => {
  * Service: Get all field types (public)
  */
 const getAllFieldTypes = async () => {
-  const fieldTypes = await FieldType.find()
-    .populate('categoryID')
-    .sort({ typeName: 1 });
+  const fieldTypes = await FieldType.find().sort({ typeName: 1 });
   return { fieldTypes };
 };
 

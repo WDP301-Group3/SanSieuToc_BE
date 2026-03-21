@@ -145,13 +145,25 @@ const getFeedbackByField = async (fieldId, page = 1, limit = 10) => {
         ? parseFloat(ratingStats[0].averageRating.toFixed(1))
         : 0;
 
-    // Get paginated feedback
+    // Get paginated feedback — populate customer info for display on field detail page
     const feedbacks = await Feedback.find({
       bookingDetailID: { $in: bookingDetailIds },
     })
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .populate({
+        path: "bookingDetailID",
+        select: "bookingID",
+        populate: {
+          path: "bookingID",
+          select: "customerID",
+          populate: {
+            path: "customerID",
+            select: "name image",
+          },
+        },
+      });
 
     const totalPages = Math.ceil(total / limit);
     const hasNextPage = page < totalPages;
