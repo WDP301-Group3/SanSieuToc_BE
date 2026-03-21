@@ -250,6 +250,10 @@ const cancelBooking = async (managerId, bookingId) => {
   if (booking.status !== 'Pending')
     throw { statusCode: 400, message: 'Chỉ có thể hủy booking đang ở trạng thái Pending' };
 
+  // Preserve amounts for email content (service resets amounts after cancellation)
+  const originalTotalPrice = booking.totalPrice;
+  const originalDepositAmount = booking.depositAmount;
+
   booking.status = 'Cancelled';
   booking.totalPrice = 0;
   booking.depositAmount = 0;
@@ -259,6 +263,25 @@ const cancelBooking = async (managerId, bookingId) => {
     { bookingID: bookingId, status: 'Active' },
     { status: 'Cancelled' }
   );
+
+  // Send email notification (booking cancelled due to not receiving deposit)
+  try {
+    const { sendBookingCancelledDueToNoDepositEmail } = require('../../utils/emailConfig');
+    if (booking.customerID) {
+      await sendBookingCancelledDueToNoDepositEmail(
+        booking.customerID,
+        {
+          _id: booking._id,
+          totalPrice: originalTotalPrice,
+          depositAmount: originalDepositAmount,
+        },
+        bookingDetails,
+        field,
+      );
+    }
+  } catch (emailError) {
+    console.error('Error sending booking cancellation (no deposit) email:', emailError);
+  }
 
   return {
     message: 'Đã hủy booking do không nhận được tiền cọc',
