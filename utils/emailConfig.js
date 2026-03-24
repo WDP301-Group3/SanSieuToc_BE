@@ -57,7 +57,7 @@ const sendResetPasswordEmail = async (to, newPassword, userName) => {
   const transporter = createTransporter();
 
   const mailOptions = {
-    from: `"San Sieu Toc" <${process.env.EMAIL_USER}>`,
+    from: `"Sân Siêu Tốc" <${process.env.EMAIL_USER}>`,
     to: to,
     subject: 'Đặt lại mật khẩu - Sân Siêu Tốc',
     html: `
@@ -92,9 +92,9 @@ const sendDepositConfirmedEmail = async (customer, booking, field) => {
   const transporter = createTransporter();
 
   const mailOptions = {
-    from: `"San Sieu Toc" <${process.env.EMAIL_USER}>`,
+    from: `"Sân Siêu Tốc" <${process.env.EMAIL_USER}>`,
     to: customer.email,
-    subject: 'Xác nhận đã nhận tiền cọc - San Sieu Toc',
+    subject: `Xác nhận đã nhận tiền cọc (${booking?._id ? `#${booking._id.toString().slice(-6)}` : ''}) - Sân Siêu Tốc`,
     html: `
       <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
         <h2 style="color: #4CAF50;">✅ Đã xác nhận tiền cọc!</h2>
@@ -130,9 +130,9 @@ const sendPaymentConfirmedEmail = async (customer, booking, field) => {
   const transporter = createTransporter();
 
   const mailOptions = {
-    from: `"San Sieu Toc" <${process.env.EMAIL_USER}>`,
+    from: `"Sân Siêu Tốc" <${process.env.EMAIL_USER}>`,
     to: customer.email,
-    subject: 'Xác nhận thanh toán hoàn tất - San Sieu Toc',
+    subject: `Xác nhận thanh toán hoàn tất (${booking?._id ? `#${booking._id.toString().slice(-6)}` : ''}) - Sân Siêu Tốc`,
     html: `
       <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
         <h2 style="color: #2196F3;">✅ Thanh toán hoàn tất!</h2>
@@ -242,12 +242,12 @@ const sendBookingConfirmationEmail = async (customer, booking, bookingDetails, f
   const mailOptions = {
     from: `"Sân Siêu Tốc" <${process.env.EMAIL_USER}>`,
     to: customer.email,
-    subject: 'Xác nhận đặt sân thành công - Sân Siêu Tốc',
+    subject: `Đặt sân thành công – vui lòng thanh toán tiền cọc (${booking?._id ? `#${booking._id.toString().slice(-6)}` : ''})`,
     html: `
       <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
-        <h2 style="color: #4CAF50;">✅ Đặt sân thành công!</h2>
+        <h2 style="color: #16a34a;">Đặt sân thành công</h2>
         <p>Xin chào <strong>${customer.name}</strong>,</p>
-        <p>Cảm ơn bạn đã đặt sân tại <strong>${field.fieldName}</strong>.</p>
+        <p>Bạn đã tạo booking <strong>${booking?._id ? `#${booking._id.toString().slice(-6)}` : ''}</strong> tại <strong>${field.fieldName}</strong>${field?.address ? ` — ${field.address}` : ''}.</p>
         <h3>Thông tin các slot đã đặt:</h3>
         <table style="width:100%;border-collapse:collapse;">
           <thead>
@@ -263,7 +263,7 @@ const sendBookingConfirmationEmail = async (customer, booking, bookingDetails, f
           <p style="margin:5px 0;"><strong>Tiền cọc cần thanh toán:</strong> ${(booking.depositAmount||0).toLocaleString('vi-VN')}đ</p>
           <p style="margin:5px 0;"><strong>Trạng thái:</strong> Chờ xác nhận cọc</p>
         </div>
-        <p style="margin-top:20px;">Vui lòng thanh toán tiền cọc để xác nhận đặt sân.</p>
+        <p style="margin-top:16px;">Bước tiếp theo: vui lòng thanh toán tiền cọc theo hướng dẫn trong ứng dụng. Sau khi quản lý sân xác nhận, booking sẽ chuyển sang trạng thái <strong>Đã xác nhận</strong>.</p>
         <hr style="border:none;border-top:1px solid #eee;margin:20px 0;">
         <p style="color:#777;font-size:12px;">© 2026 Sân Siêu Tốc. All rights reserved.</p>
       </div>
@@ -319,7 +319,7 @@ const sendBookingCancelledDueToNoDepositEmail = async (
       <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 700px;">
         <h2 style="color: #f44336;">❌ Booking đã bị hủy</h2>
         <p>Xin chào <strong>${customer.name}</strong>,</p>
-        <p>Booking ${bookingCode} tại <strong>${field?.fieldName || ''}</strong> đã bị <strong>hủy</strong> do hệ thống/nhân viên chưa ghi nhận được tiền cọc trong thời gian yêu cầu.</p>
+        <p>Booking ${bookingCode} tại <strong>${field?.fieldName || ''}</strong> đã bị <strong>hủy</strong> do quản lý chưa ghi nhận được tiền cọc trong thời gian yêu cầu.</p>
 
         <div style="margin: 20px 0; padding: 15px; background-color: #ffebee; border-left: 4px solid #f44336;">
           <p style="margin: 5px 0;"><strong>Mã booking:</strong> ${bookingCode}</p>
@@ -355,6 +355,92 @@ const sendBookingCancelledDueToNoDepositEmail = async (
   return info;
 };
 
+/**
+ * Send email notification to manager when a new booking is created by customer
+ */
+const sendNewBookingNotificationToManager = async (manager, customer, booking, bookingDetails, field) => {
+  if (!isEmailConfigured()) {
+    console.warn('⚠️ Email not configured. Skipping manager new-booking email.');
+    return;
+  }
+
+  const managerEmail = manager?.email;
+  if (!managerEmail) {
+    console.warn('⚠️ Manager email missing. Skipping manager new-booking email.');
+    return;
+  }
+
+  const transporter = createTransporter();
+  const toLocale = (d) => new Date(d).toLocaleString('vi-VN', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  });
+
+  const bookingCode = booking?._id ? `#${booking._id.toString().slice(-6)}` : '';
+  const totalSlots = (bookingDetails || []).length;
+  const totalPrice = (bookingDetails || []).reduce((sum, bd) => sum + (bd.priceSnapshot || 0), 0);
+  const depositAmount = booking?.depositAmount || 0;
+
+  const detailsHtml = (bookingDetails || []).map((bd) => {
+    return `
+      <tr>
+        <td style="padding:10px;border-bottom:1px solid #eee;">${toLocale(bd.startTime)}</td>
+        <td style="padding:10px;border-bottom:1px solid #eee;">${toLocale(bd.endTime)}</td>
+        <td style="padding:10px;border-bottom:1px solid #eee;">${(bd.priceSnapshot || 0).toLocaleString('vi-VN')}đ</td>
+      </tr>`;
+  }).join('');
+
+  const mailOptions = {
+    from: `"Sân Siêu Tốc" <${process.env.EMAIL_USER}>`,
+    to: managerEmail,
+    subject: `📩 Có booking mới ${bookingCode} - ${field?.fieldName || 'Sân Siêu Tốc'}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 750px;">
+        <h2 style="color: #0ea5e9;">📩 Booking mới cần xử lý</h2>
+        <p>Xin chào <strong>${manager?.name || 'Manager'}</strong>,</p>
+        <p>Bạn vừa nhận được một booking mới tại <strong>${field?.fieldName || ''}</strong>.</p>
+
+        <div style="margin: 20px 0; padding: 15px; background-color: #f5f5f5; border-left: 4px solid #0ea5e9;">
+          <p style="margin: 5px 0;"><strong>Mã booking:</strong> ${bookingCode}</p>
+          <p style="margin: 5px 0;"><strong>Thời điểm tạo:</strong> ${booking?.createdAt ? toLocale(booking.createdAt) : ''}</p>
+          <p style="margin: 5px 0;"><strong>Số slot:</strong> ${totalSlots}</p>
+          <p style="margin: 5px 0;"><strong>Tổng tiền:</strong> ${totalPrice.toLocaleString('vi-VN')}đ</p>
+          <p style="margin: 5px 0;"><strong>Tiền cọc cần xác nhận:</strong> ${depositAmount.toLocaleString('vi-VN')}đ</p>
+        </div>
+
+        <h3>Thông tin khách hàng</h3>
+        <ul style="padding-left: 18px; margin-top: 8px;">
+          <li><strong>Tên:</strong> ${customer?.name || ''}</li>
+          <li><strong>Email:</strong> ${customer?.email || ''}</li>
+          <li><strong>SĐT:</strong> ${customer?.phone || ''}</li>
+        </ul>
+
+        <h3>Danh sách slot</h3>
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="background:#f1f5f9;">
+              <th style="padding:10px;text-align:left;">Bắt đầu</th>
+              <th style="padding:10px;text-align:left;">Kết thúc</th>
+              <th style="padding:10px;text-align:left;">Giá</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${detailsHtml || `<tr><td colspan="3" style="padding:10px;">(Không có dữ liệu slot)</td></tr>`}
+          </tbody>
+        </table>
+
+        <p style="margin-top: 18px;">Vui lòng kiểm tra hệ thống để xác nhận cọc hoặc từ chối/hủy booking theo quy trình.</p>
+        <hr style="border:none;border-top:1px solid #eee;margin:20px 0;">
+        <p style="color:#777;font-size:12px;">© 2026 Sân Siêu Tốc. All rights reserved.</p>
+      </div>
+    `,
+  };
+
+  const info = await transporter.sendMail(mailOptions);
+  console.log(`✅ Manager new-booking email sent to ${managerEmail} | messageId: ${info.messageId}`);
+  return info;
+};
+
 module.exports = {
   sendResetPasswordEmail,
   sendDepositConfirmedEmail,
@@ -362,5 +448,6 @@ module.exports = {
   sendStatusChangeEmail,
   sendBookingConfirmationEmail,
   sendBookingCancelledDueToNoDepositEmail,
+  sendNewBookingNotificationToManager,
   isEmailConfigured,
 };

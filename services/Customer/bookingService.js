@@ -12,7 +12,7 @@ const {
   formatDate,
   formatDateTime
 } = require('../../utils/bookingHelpers');
-const { sendResetPasswordEmail } = require('../../utils/emailConfig');
+const { sendResetPasswordEmail, sendNewBookingNotificationToManager } = require('../../utils/emailConfig');
 
 /**
  * Get field availability for a specific date
@@ -227,15 +227,20 @@ const createBooking = async (customerId, bookingData) => {
     // Create booking details
     const createdDetails = await BookingDetail.insertMany(bookingDetailsToCreate);
 
-    // Send confirmation email (không throw error nếu email fail)
+    // Send emails (không throw error nếu email fail)
     try {
       const Customer = require('../../models/Customer');
       const customer = await Customer.findById(customerId);
+
       if (customer) {
+        // Customer confirmation email (existing behavior)
         await sendBookingConfirmationEmail(customer, booking, createdDetails, field);
+
+        // Manager notification email (new)
+        await sendNewBookingNotificationToManager(field.managerID, customer, booking, createdDetails, field);
       }
     } catch (emailError) {
-      console.error('Error sending booking confirmation email:', emailError.message || emailError);
+      console.error('Error sending booking emails:', emailError.message || emailError);
     }
 
     return {
@@ -279,7 +284,13 @@ const updateBookingDetailStatus = async (bookingDetailId, newStatus, managerId) 
   }
 
   const bookingDetail = await BookingDetail.findById(bookingDetailId)
-    .populate('fieldID')
+    .populate({
+      path: 'fieldID',
+      populate: {
+        path: 'managerID',
+        select: 'name email phone'
+      }
+    })
     .populate('bookingID');
 
   if (!bookingDetail) {
@@ -318,7 +329,14 @@ const updateBookingDetailStatus = async (bookingDetailId, newStatus, managerId) 
     const Customer = require('../../models/Customer');
     const customer = await Customer.findById(bookingDetail.bookingID.customerID);
     if (customer) {
-      await sendStatusChangeEmail(customer, bookingDetail, oldStatus, newStatus, field);
+      await sendStatusChangeEmail(
+        customer,
+        bookingDetail,
+        oldStatus,
+        newStatus,
+        field,
+        newStatus === 'Cancelled' ? { cancelReason: 'no_show' } : undefined
+      );
     } else {
       console.warn('⚠️ Customer not found for email notification, bookingDetailId:', bookingDetailId);
     }
@@ -563,17 +581,25 @@ const sendBookingConfirmationEmail = async (customer, booking, bookingDetails, f
     </tr>
   `).join('');
 
+  const bookingCode = booking?._id ? `#${booking._id.toString().slice(-6)}` : '';
+  const createdAtText = booking?.createdAt ? formatDateTime(booking.createdAt) : '';
+  const managerName = field?.managerID?.name || '';
+  const managerPhone = field?.managerID?.phone || '';
+  const fieldAddress = field?.address || '';
+
   const mailOptions = {
-    from: `"San Sieu Toc" <${process.env.EMAIL_USER}>`,
+    from: `"Sân Siêu Tốc" <${process.env.EMAIL_USER}>`,
     to: customer.email,
-    subject: 'Xác nhận đặt sân - San Sieu Toc',
+    subject: `Đặt sân thành công – vui lòng thanh toán tiền cọc (${bookingCode})`,
     html: `
       <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
-        <h2 style="color: #4CAF50;">✅ Đặt sân thành công!</h2>
+        <h2 style="color: #16a34a;">Đặt sân thành công</h2>
         <p>Xin chào <strong>${customer.name}</strong>,</p>
-        <p>Cảm ơn bạn đã đặt sân tại <strong>${field.fieldName}</strong>.</p>
+        <p>Bạn đã tạo booking <strong>${bookingCode}</strong> tại <strong>${field.fieldName}</strong>${fieldAddress ? ` — ${fieldAddress}` : ''}.</p>
+
+        ${createdAtText ? `<p style="margin: 6px 0 0;"><strong>Thời điểm tạo:</strong> ${createdAtText}</p>` : ''}
         
-        <h3>Thông tin booking:</h3>
+        <h3 style="margin-top: 18px;">Các slot đã đặt</h3>
         <table style="width: 100%; border-collapse: collapse;">
           <thead>
             <tr style="background-color: #f5f5f5;">
@@ -588,14 +614,22 @@ const sendBookingConfirmationEmail = async (customer, booking, bookingDetails, f
         </table>
         
         <div style="margin-top: 20px; padding: 15px; background-color: #fff3cd; border-left: 4px solid #ffc107;">
-          <p style="margin: 5px 0;"><strong>Tiền cọc:</strong> ${booking.depositAmount.toLocaleString('vi-VN')}đ</p>
-          <p style="margin: 5px 0;"><strong>Trạng thái:</strong> Chờ thanh toán</p>
+          <p style="margin: 5px 0;"><strong>Tiền cọc cần thanh toán:</strong> ${booking.depositAmount.toLocaleString('vi-VN')}đ</p>
+          <p style="margin: 5px 0;"><strong>Trạng thái:</strong> Chờ xác nhận cọc</p>
         </div>
         
-        <p style="margin-top: 20px;">Vui lòng thanh toán tiền cọc để xác nhận đặt sân.</p>
+        <p style="margin-top: 16px;">Bước tiếp theo: vui lòng thanh toán tiền cọc theo hướng dẫn trong ứng dụng. Sau khi quản lý sân xác nhận, booking sẽ chuyển sang trạng thái <strong>Đã xác nhận</strong>.</p>
+
+        ${(managerName || managerPhone) ? `
+          <div style="margin-top: 14px; padding: 12px; background-color: #f8fafc; border-left: 4px solid #94a3b8;">
+            <p style="margin: 4px 0;"><strong>Liên hệ quản lý sân</strong></p>
+            ${managerName ? `<p style="margin: 4px 0;">Tên: ${managerName}</p>` : ''}
+            ${managerPhone ? `<p style="margin: 4px 0;">SĐT: ${managerPhone}</p>` : ''}
+          </div>
+        ` : ''}
         
         <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-        <p style="color: #777; font-size: 12px;">© 2026 San Sieu Toc. All rights reserved.</p>
+        <p style="color: #777; font-size: 12px;">© 2026 Sân Siêu Tốc. All rights reserved.</p>
       </div>
     `
   };
@@ -606,7 +640,7 @@ const sendBookingConfirmationEmail = async (customer, booking, bookingDetails, f
 /**
  * Send status change email
  */
-const sendStatusChangeEmail = async (customer, bookingDetail, oldStatus, newStatus, field) => {
+const sendStatusChangeEmail = async (customer, bookingDetail, oldStatus, newStatus, field, options = {}) => {
   const nodemailer = require('nodemailer');
 
   if (!process.env.EMAIL_USER || process.env.EMAIL_USER === 'your-email@gmail.com') {
@@ -636,18 +670,45 @@ const sendStatusChangeEmail = async (customer, bookingDetail, oldStatus, newStat
     'Cancelled': 'Đã hủy'
   };
 
+  const manager = field?.managerID && typeof field.managerID === 'object'
+    ? field.managerID
+    : null;
+
+  const managerEmail = manager?.email ? String(manager.email).trim() : '';
+  const managerPhone = manager?.phone ? String(manager.phone).trim() : '';
+
+  const managerContactForSentence = managerEmail && managerPhone
+    ? `'${managerEmail}' hoặc '${managerPhone}'`
+    : managerEmail
+      ? `'${managerEmail}'`
+      : managerPhone
+        ? `'${managerPhone}'`
+        : '';
+
+  const cancelReason = options?.cancelReason; // 'no_show' | 'customer_cancelled' | undefined
+  const cancelledReasonText =
+    cancelReason === 'no_show'
+      ? 'Slot bị hủy do bạn không đến sân.'
+      : cancelReason === 'customer_cancelled'
+        ? 'Slot đã được hủy theo yêu cầu của bạn.'
+        : 'Slot đã bị hủy.';
+
   const mailOptions = {
-    from: `"San Sieu Toc" <${process.env.EMAIL_USER}>`,
+    from: `"Sân Siêu Tốc" <${process.env.EMAIL_USER}>`,
     to: customer.email,
-    subject: 'Cập nhật trạng thái đặt sân - San Sieu Toc',
+    subject:
+      newStatus === 'Cancelled' && cancelReason === 'no_show'
+        ? 'Thông báo: Slot bị hủy do không đến sân'
+        : `Cập nhật trạng thái slot đặt sân - ${statusLabels[newStatus] || newStatus}`,
     html: `
       <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
-        <h2 style="color: ${statusColors[newStatus]};">Cập nhật trạng thái booking</h2>
+        <h2 style="color: ${statusColors[newStatus]};">Cập nhật trạng thái slot đặt sân</h2>
         <p>Xin chào <strong>${customer.name}</strong>,</p>
-        <p>Trạng thái booking của bạn đã được cập nhật.</p>
+        <p>Một slot trong booking của bạn đã được cập nhật.</p>
         
         <div style="margin: 20px 0; padding: 15px; background-color: #f5f5f5; border-left: 4px solid ${statusColors[newStatus]};">
           <p style="margin: 5px 0;"><strong>Sân:</strong> ${field.fieldName}</p>
+          ${field.address ? `<p style="margin: 5px 0;"><strong>Địa chỉ:</strong> ${field.address}</p>` : ''}
           <p style="margin: 5px 0;"><strong>Thời gian:</strong> ${formatDateTime(bookingDetail.startTime)} - ${formatDateTime(bookingDetail.endTime)}</p>
           <p style="margin: 5px 0;"><strong>Giá:</strong> ${bookingDetail.priceSnapshot.toLocaleString('vi-VN')}đ</p>
           <p style="margin: 5px 0;"><strong>Trạng thái cũ:</strong> ${statusLabels[oldStatus]}</p>
@@ -655,10 +716,10 @@ const sendStatusChangeEmail = async (customer, bookingDetail, oldStatus, newStat
         </div>
         
         ${newStatus === 'Completed' ? '<p>✅ Cảm ơn bạn đã sử dụng dịch vụ của chúng tôi!</p>' : ''}
-        ${newStatus === 'Cancelled' ? '<p>❌ Booking của bạn đã bị hủy. Vui lòng liên hệ nếu có thắc mắc.</p>' : ''}
+        ${newStatus === 'Cancelled' ? `<p style="margin-top: 10px;"><strong>Lý do:</strong> ${cancelledReasonText}</p><p>Vui lòng liên hệ ${managerContactForSentence || 'quản lý sân'} nếu có thắc mắc.</p>` : ''}
         
         <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;">
-        <p style="color: #777; font-size: 12px;">© 2026 San Sieu Toc. All rights reserved.</p>
+        <p style="color: #777; font-size: 12px;">© 2026 Sân Siêu Tốc. All rights reserved.</p>
       </div>
     `
   };
@@ -710,9 +771,12 @@ const cancelBooking = async (customerId, bookingId) => {
     try {
       const Customer = require('../../models/Customer');
       const customer = await Customer.findById(customerId);
-      const field = await Field.findById(detail.fieldID);
+      const field = await Field.findById(detail.fieldID).populate({
+        path: 'managerID',
+        select: 'name email phone'
+      });
       if (customer && field) {
-        await sendStatusChangeEmail(customer, detail, oldDetailStatus, 'Cancelled', field);
+        await sendStatusChangeEmail(customer, detail, oldDetailStatus, 'Cancelled', field, { cancelReason: 'customer_cancelled' });
       }
     } catch (emailError) {
       console.error('❌ Error sending cancellation email:', emailError.message || emailError);
