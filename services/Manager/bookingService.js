@@ -134,7 +134,8 @@ const confirmDeposit = async (managerId, bookingId) => {
   }
 
   const field = bookingDetails[0].fieldID;
-  if (field.managerID.toString() !== managerId.toString()) {
+  const fieldManagerId = field?.managerID?._id || field?.managerID;
+  if (String(fieldManagerId) !== String(managerId)) {
     throw {
       statusCode: 403,
       message: "Bạn không có quyền xác nhận booking này",
@@ -193,7 +194,8 @@ const confirmPayment = async (managerId, bookingId) => {
   }
 
   const field = bookingDetails[0].fieldID;
-  if (field.managerID.toString() !== managerId.toString()) {
+  const fieldManagerId = field?.managerID?._id || field?.managerID;
+  if (String(fieldManagerId) !== String(managerId)) {
     throw {
       statusCode: 403,
       message: "Bạn không có quyền xác nhận thanh toán này",
@@ -244,8 +246,10 @@ const cancelBooking = async (managerId, bookingId) => {
   if (bookingDetails.length === 0) throw { statusCode: 404, message: 'Booking không có chi tiết' };
 
   const field = bookingDetails[0].fieldID;
-  if (field.managerID.toString() !== managerId.toString())
+  const fieldManagerId = field?.managerID?._id || field?.managerID;
+  if (String(fieldManagerId) !== String(managerId)) {
     throw { statusCode: 403, message: 'Bạn không có quyền hủy booking này' };
+  }
 
   if (booking.status !== 'Pending')
     throw { statusCode: 400, message: 'Chỉ có thể hủy booking đang ở trạng thái Pending' };
