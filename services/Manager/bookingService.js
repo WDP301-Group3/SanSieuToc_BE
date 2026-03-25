@@ -4,6 +4,21 @@ const Booking = require("../../models/Booking");
 const BookingDetail = require("../../models/BookingDetail");
 const SlotHold = require("../../models/SlotHold");
 
+const dateKey = (d) => {
+  const dt = new Date(d);
+  const year = dt.getFullYear();
+  const month = String(dt.getMonth() + 1).padStart(2, '0');
+  const day = String(dt.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const toHHmm = (d) => {
+  const dt = new Date(d);
+  const hh = String(dt.getHours()).padStart(2, '0');
+  const mm = String(dt.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+};
+
 /**
  * Get all bookings for fields managed by this manager
  * Optional: filter by customerId
@@ -151,19 +166,143 @@ const confirmDeposit = async (managerId, bookingId) => {
     };
   }
 
+  // Slots are only locked after deposit confirmation.
+  // So right before confirming, ensure these slots haven't been taken by another Confirmed booking.
+  for (const detail of bookingDetails) {
+    const fieldId = detail.fieldID?._id || detail.fieldID;
+    const conflict = await BookingDetail.findOne({
+      bookingID: { $ne: booking._id },
+      fieldID: fieldId,
+      startTime: detail.startTime,
+      endTime: detail.endTime,
+      status: 'Active'
+    }).populate({
+      path: 'bookingID',
+      match: { status: 'Confirmed' },
+      select: '_id status'
+    });
+
+    if (conflict && conflict.bookingID) {
+      throw {
+        statusCode: 409,
+        message: 'Khung giờ của booking này đã được người khác đặt trước. Không thể xác nhận tiền cọc.'
+      };
+    }
+  }
+
   // Update status
   booking.status = "Confirmed";
   booking.depositConfirmedAt = new Date();
   await booking.save();
 
+  // Activate booking details so they lock availability
+  await BookingDetail.updateMany(
+    { bookingID: booking._id, status: 'Pending' },
+    { $set: { status: 'Active' } }
+  );
+
+  // Recurring contract: only create/transfer/convert holds after deposit is confirmed
+  if (booking.repeatType === 'recurring') {
+    const detailsSorted = bookingDetails.slice().sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+    const computedContractStartAt = booking.contractStartAt || detailsSorted[0]?.startTime || null;
+    const computedContractEndAt = booking.contractEndAt || detailsSorted.reduce((max, bd) => (bd.endTime > max ? bd.endTime : max), detailsSorted[0].endTime);
+    const computedHoldUntil = booking.holdUntil || (() => {
+      if (!computedContractStartAt) return null;
+      const holdUntil = new Date(computedContractStartAt);
+      holdUntil.setFullYear(holdUntil.getFullYear() + 1);
+      return holdUntil;
+    })();
+
+    if (computedContractStartAt && computedContractEndAt && computedHoldUntil) {
+      // Persist metadata if missing
+      if (!booking.contractStartAt || !booking.contractEndAt || !booking.holdUntil) {
+        booking.contractStartAt = computedContractStartAt;
+        booking.contractEndAt = computedContractEndAt;
+        booking.holdUntil = computedHoldUntil;
+        booking.renewalState = booking.renewalState || 'Active';
+        await booking.save();
+      }
+
+      // Build weekly slot pairs based on the first contract day
+      const firstDateStr = dateKey(booking.contractStartAt);
+      const firstDayDetails = detailsSorted.filter((bd) => dateKey(bd.startTime) === firstDateStr);
+      const slotPairs = new Map();
+      for (const bd of firstDayDetails) {
+        const s = toHHmm(bd.startTime);
+        const e = toHHmm(bd.endTime);
+        slotPairs.set(`${s}-${e}`, { startTime: s, endTime: e });
+      }
+      const slots = Array.from(slotPairs.values());
+
+      // Initial contract: create holds for future weeks (after contract ends)
+      if (!booking.renewedFromBookingId) {
+        if (slots.length > 0) {
+          const latestStart = detailsSorted.reduce((max, bd) => (bd.startTime > max ? bd.startTime : max), detailsSorted[0].startTime);
+          const holdStartDate = new Date(latestStart);
+          holdStartDate.setHours(0, 0, 0, 0);
+          holdStartDate.setDate(holdStartDate.getDate() + 7);
+
+          const holdUntilDate = new Date(booking.holdUntil);
+          holdUntilDate.setHours(0, 0, 0, 0);
+
+          const holdsToCreate = [];
+          for (let d = new Date(holdStartDate); d < holdUntilDate; d.setDate(d.getDate() + 7)) {
+            const dStr = dateKey(d);
+            for (const slot of slots) {
+              holdsToCreate.push({
+                fieldID: booking.fieldID,
+                startTime: new Date(`${dStr}T${slot.startTime}:00`),
+                endTime: new Date(`${dStr}T${slot.endTime}:00`),
+                seriesBookingId: booking._id,
+                status: 'Held',
+                holdUntil: booking.holdUntil
+              });
+            }
+          }
+
+          if (holdsToCreate.length > 0) {
+            await SlotHold.insertMany(holdsToCreate, { ordered: false }).catch((e) => {
+              if (e && e.code === 11000) return;
+              throw e;
+            });
+          }
+        }
+      }
+    }
+  }
+
   // If this is a renewal booking, mark original as Renewed and transfer remaining holds
   if (booking.renewedFromBookingId) {
     try {
+      // Convert holds for the new paid period (so they no longer block separately)
+      const bookingDetailsForConvert = await BookingDetail.find({ bookingID: booking._id }).select('startTime endTime');
+      const convertOps = bookingDetailsForConvert.map((bd) => ({
+        updateOne: {
+          filter: {
+            fieldID: booking.fieldID,
+            startTime: bd.startTime,
+            endTime: bd.endTime,
+            seriesBookingId: booking.renewedFromBookingId,
+            status: 'Held'
+          },
+          update: {
+            $set: {
+              status: 'Converted',
+              convertedToBookingId: booking._id
+            }
+          }
+        }
+      }));
+      if (convertOps.length > 0) {
+        await SlotHold.bulkWrite(convertOps, { ordered: false });
+      }
+
       await Booking.updateOne(
         { _id: booking.renewedFromBookingId },
         { $set: { renewalState: 'Renewed' } }
       );
 
+      // Transfer remaining holds (after the new contract period ends) to the new booking series
       if (booking.contractEndAt) {
         await SlotHold.updateMany(
           {
@@ -368,7 +507,7 @@ const cancelBooking = async (managerId, bookingId) => {
   await booking.save();
 
   await BookingDetail.updateMany(
-    { bookingID: bookingId, status: 'Active' },
+    { bookingID: bookingId, status: { $in: ['Active', 'Pending'] } },
     { status: 'Cancelled' }
   );
 

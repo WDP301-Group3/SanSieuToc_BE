@@ -52,10 +52,10 @@ const getFieldAvailability = async (fieldId, date) => {
   const bookedDetails = await BookingDetail.find({
     fieldID: fieldId,
     startTime: { $gte: startOfDay, $lte: endOfDay },
-    status: { $in: ['Active', 'Pending'] }
+    status: 'Active'
   }).populate({
     path: 'bookingID',
-    match: { status: { $ne: 'Cancelled' } }
+    match: { status: 'Confirmed' }
   });
 
   const heldDetails = await SlotHold.find({
@@ -64,7 +64,7 @@ const getFieldAvailability = async (fieldId, date) => {
     status: 'Held'
   }).select('startTime endTime');
 
-  // Filter out bookingDetails where booking was cancelled
+  // Filter out bookingDetails where booking is not confirmed
   const activeBookedDetails = bookedDetails.filter(bd => bd.bookingID !== null);
 
   // Mark slots as available or not
@@ -191,10 +191,10 @@ const createBooking = async (customerId, bookingData) => {
           fieldID: fieldId,
           startTime: slotStartTime,
           endTime: slotEndTime,
-          status: { $in: ['Active', 'Pending'] }
+          status: 'Active'
         }).populate({
           path: 'bookingID',
-          match: { status: { $ne: 'Cancelled' } }
+          match: { status: 'Confirmed' }
         });
 
         if (existingBooking && existingBooking.bookingID) {
@@ -231,7 +231,7 @@ const createBooking = async (customerId, bookingData) => {
           startTime: slotStartTime,
           endTime: slotEndTime,
           priceSnapshot: slotPrice,
-          status: 'Active'
+          status: 'Pending'
         });
       }
     }
@@ -262,8 +262,9 @@ const createBooking = async (customerId, bookingData) => {
     // Create booking details
     const createdDetails = await BookingDetail.insertMany(bookingDetailsToCreate);
 
-    // If this is a 3-month recurring contract, compute contract metadata and (if not renewal) create SlotHold for the rest of the year
-    if (repeatType === 'recurring' && duration === 3) {
+    // If this is a recurring contract, compute contract metadata.
+    // NOTE: Slot locking (SlotHold creation/conversion) is done only after manager confirms deposit.
+    if (repeatType === 'recurring') {
       try {
         const contractStartAt = createdDetails.reduce(
           (min, bd) => (bd.startTime < min ? bd.startTime : min),
@@ -282,74 +283,8 @@ const createBooking = async (customerId, bookingData) => {
         booking.holdUntil = holdUntil;
         booking.renewalState = booking.renewalState || 'Active';
         await booking.save();
-
-        // Only the initial contract creates holds. Renewal bookings convert existing holds.
-        if (!renewFromBookingId) {
-          // Holds start from the first occurrence after contract end
-          const lastContractDate = bookingDates[bookingDates.length - 1];
-          const holdStartDate = new Date(lastContractDate);
-          holdStartDate.setHours(0, 0, 0, 0);
-          holdStartDate.setDate(holdStartDate.getDate() + 7);
-
-          const holdUntilDate = new Date(holdUntil);
-          holdUntilDate.setHours(0, 0, 0, 0);
-
-          const holdsToCreate = [];
-          for (let d = new Date(holdStartDate); d < holdUntilDate; d.setDate(d.getDate() + 7)) {
-            const dStr = formatDate(d);
-            for (const slot of selectedSlots) {
-              const holdStartTime = new Date(`${dStr}T${slot.startTime}:00`);
-              const holdEndTime = new Date(`${dStr}T${slot.endTime}:00`);
-              if (isPastDateTime(holdStartTime)) continue;
-
-              holdsToCreate.push({
-                fieldID: fieldId,
-                startTime: holdStartTime,
-                endTime: holdEndTime,
-                seriesBookingId: booking._id,
-                status: 'Held',
-                holdUntil: holdUntil
-              });
-            }
-          }
-
-          if (holdsToCreate.length > 0) {
-            await SlotHold.insertMany(holdsToCreate, { ordered: false }).catch((e) => {
-              if (e && e.code === 11000) return;
-              throw e;
-            });
-          }
-        }
       } catch (metaError) {
         console.error('Error creating SlotHold for recurring contract:', metaError.message || metaError);
-      }
-    }
-
-    // Renewal conversion: convert held slots to converted for the paid period
-    if (renewFromBookingId) {
-      try {
-        const ops = createdDetails.map((bd) => ({
-          updateOne: {
-            filter: {
-              fieldID: fieldId,
-              startTime: bd.startTime,
-              endTime: bd.endTime,
-              seriesBookingId: renewFromBookingId,
-              status: 'Held'
-            },
-            update: {
-              $set: {
-                status: 'Converted',
-                convertedToBookingId: booking._id
-              }
-            }
-          }
-        }));
-        if (ops.length > 0) {
-          await SlotHold.bulkWrite(ops, { ordered: false });
-        }
-      } catch (convertError) {
-        console.error('Error converting held slots:', convertError.message || convertError);
       }
     }
 
