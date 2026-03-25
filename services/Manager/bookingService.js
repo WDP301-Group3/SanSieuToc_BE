@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const Field = require("../../models/Field");
 const Booking = require("../../models/Booking");
 const BookingDetail = require("../../models/BookingDetail");
+const SlotHold = require("../../models/SlotHold");
 
 /**
  * Get all bookings for fields managed by this manager
@@ -152,7 +153,110 @@ const confirmDeposit = async (managerId, bookingId) => {
 
   // Update status
   booking.status = "Confirmed";
+  booking.depositConfirmedAt = new Date();
   await booking.save();
+
+  // If this is a renewal booking, mark original as Renewed and transfer remaining holds
+  if (booking.renewedFromBookingId) {
+    try {
+      await Booking.updateOne(
+        { _id: booking.renewedFromBookingId },
+        { $set: { renewalState: 'Renewed' } }
+      );
+
+      if (booking.contractEndAt) {
+        await SlotHold.updateMany(
+          {
+            seriesBookingId: booking.renewedFromBookingId,
+            status: 'Held',
+            startTime: { $gte: booking.contractEndAt }
+          },
+          {
+            $set: {
+              seriesBookingId: booking._id,
+              holdUntil: booking.holdUntil || null
+            }
+          }
+        );
+      }
+
+      // Extend holds up to the new holdUntil (if any gap remains)
+      if (booking.holdUntil && booking.contractStartAt) {
+        const latestHeld = await SlotHold.findOne({
+          seriesBookingId: booking._id,
+          status: 'Held'
+        }).sort({ startTime: -1 }).select('startTime');
+
+        let nextHoldDate = latestHeld?.startTime ? new Date(latestHeld.startTime) : null;
+        if (nextHoldDate) {
+          nextHoldDate.setHours(0, 0, 0, 0);
+          nextHoldDate.setDate(nextHoldDate.getDate() + 7);
+        } else if (booking.contractEndAt) {
+          nextHoldDate = new Date(booking.contractEndAt);
+          nextHoldDate.setHours(0, 0, 0, 0);
+          nextHoldDate.setDate(nextHoldDate.getDate() + 7);
+        }
+
+        const holdUntilDate = new Date(booking.holdUntil);
+        holdUntilDate.setHours(0, 0, 0, 0);
+
+        if (nextHoldDate && nextHoldDate < holdUntilDate) {
+          const formatDate = (d) => {
+            const dt = new Date(d);
+            const year = dt.getFullYear();
+            const month = String(dt.getMonth() + 1).padStart(2, '0');
+            const day = String(dt.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+          };
+
+          const toTime = (d) => {
+            const dt = new Date(d);
+            const hh = String(dt.getHours()).padStart(2, '0');
+            const mm = String(dt.getMinutes()).padStart(2, '0');
+            return `${hh}:${mm}`;
+          };
+
+          const renewalDetails = await BookingDetail.find({ bookingID: booking._id }).sort({ startTime: 1 });
+          const firstDateStr = formatDate(booking.contractStartAt);
+          const firstDayDetails = renewalDetails.filter((bd) => formatDate(bd.startTime) === firstDateStr);
+
+          const slotPairs = new Map();
+          for (const bd of firstDayDetails) {
+            const s = toTime(bd.startTime);
+            const e = toTime(bd.endTime);
+            slotPairs.set(`${s}-${e}`, { startTime: s, endTime: e });
+          }
+
+          const slots = Array.from(slotPairs.values());
+          if (slots.length > 0) {
+            const holdsToCreate = [];
+            for (let d = new Date(nextHoldDate); d < holdUntilDate; d.setDate(d.getDate() + 7)) {
+              const dStr = formatDate(d);
+              for (const slot of slots) {
+                holdsToCreate.push({
+                  fieldID: booking.fieldID,
+                  startTime: new Date(`${dStr}T${slot.startTime}:00`),
+                  endTime: new Date(`${dStr}T${slot.endTime}:00`),
+                  seriesBookingId: booking._id,
+                  status: 'Held',
+                  holdUntil: booking.holdUntil
+                });
+              }
+            }
+
+            if (holdsToCreate.length > 0) {
+              await SlotHold.insertMany(holdsToCreate, { ordered: false }).catch((e) => {
+                if (e && e.code === 11000) return;
+                throw e;
+              });
+            }
+          }
+        }
+      }
+    } catch (transferError) {
+      console.error('Error transferring holds for renewal booking:', transferError.message || transferError);
+    }
+  }
 
   // Send email notification
   try {
