@@ -299,7 +299,8 @@ const updateBookingDetailStatus = async (bookingDetailId, newStatus, managerId) 
 
   // Check if manager owns this field
   const field = bookingDetail.fieldID;
-  if (field.managerID.toString() !== managerId.toString()) {
+  const fieldManagerId = field?.managerID?._id || field?.managerID;
+  if (String(fieldManagerId) !== String(managerId)) {
     throw { statusCode: 403, message: 'Bạn không có quyền cập nhật booking này' };
   }
 
