@@ -157,10 +157,42 @@ const cancelBooking = async (req, res) => {
   }
 };
 
+/**
+ * Controller: Renew a recurring contract booking
+ * Creates a new booking linked to the original booking and requires deposit confirmation as usual.
+ */
+const renewBooking = async (req, res) => {
+  try {
+    const customerId = req.userId;
+    const { bookingId } = req.params;
+    const { duration } = req.body || {};
+
+    const result = await bookingService.renewRecurringContract(customerId, bookingId, duration);
+
+    res.status(201).json({
+      success: true,
+      message: result.message,
+      data: result.data
+    });
+  } catch (error) {
+    console.error('Renew Booking Error:', error);
+
+    const statusCode = error.statusCode || 500;
+    const message = error.message || 'Lỗi server khi gia hạn booking';
+
+    res.status(statusCode).json({
+      success: false,
+      message,
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getFieldAvailability,
   createBooking,
   getCustomerBookings,
   updateBookingDetailStatus,
-  cancelBooking
+  cancelBooking,
+  renewBooking
 };
