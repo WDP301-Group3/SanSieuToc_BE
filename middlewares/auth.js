@@ -1,7 +1,8 @@
 const jwt = require('jsonwebtoken');
+const Customer = require('../models/Customer');
 
 // Verify JWT Token
-const verifyToken = (req, res, next) => {
+const verifyToken = async (req, res, next) => {
   try {
     // Get token from header
     const token = req.headers.authorization?.split(' ')[1]; // Bearer TOKEN
@@ -19,6 +20,18 @@ const verifyToken = (req, res, next) => {
     // Attach user info to request
     req.userId = decoded.id;
     req.userRole = decoded.role;
+
+    // Check if customer account is banned
+    if (decoded.role === 'customer') {
+      const customer = await Customer.findById(decoded.id).select('status');
+      if (customer && customer.status === 'Banned') {
+        return res.status(403).json({
+          success: false,
+          code: 'ACCOUNT_BANNED',
+          message: 'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.'
+        });
+      }
+    }
     
     next();
   } catch (error) {
