@@ -122,12 +122,62 @@ const calculateSlotPrice = (startTime, endTime, hourlyPrice) => {
 };
 
 /**
- * Calculate deposit amount (20% of total)
+ * Calculate deposit amount (30% of total)
  * @param {Number} totalPrice
  * @returns {Number}
  */
 const calculateDepositAmount = (totalPrice) => {
-  return Math.round(totalPrice * 0.2);
+  return Math.round(totalPrice * 0.3);
+};
+
+/**
+ * Get maximum allowed booking year based on current date.
+ * Rule:
+ * - Jan..Nov: allow bookings only within current year
+ * - Dec: allow bookings within current year and next year
+ * @param {Date} [now]
+ * @returns {number}
+ */
+const getMaxBookingYear = (now = new Date()) => {
+  const d = new Date(now);
+  const currentYear = d.getFullYear();
+  const isDecember = d.getMonth() === 11;
+  return isDecember ? currentYear + 1 : currentYear;
+};
+
+const getYearFromDateInput = (dateInput) => {
+  if (typeof dateInput === 'string') {
+    // Common formats from FE / query: YYYY-MM-DD
+    const m = /^\d{4}-\d{2}-\d{2}$/.exec(dateInput);
+    if (m) return Number(dateInput.slice(0, 4));
+  }
+  return new Date(dateInput).getFullYear();
+};
+
+/**
+ * Assert booking dates are within allowed year window.
+ * Throws an object shaped like other service errors: { statusCode, message }
+ * @param {Array<Date|string>} dates
+ * @param {Date} [now]
+ */
+const assertBookingDatesWithinAllowedYears = (dates, now = new Date()) => {
+  const d = new Date(now);
+  const currentYear = d.getFullYear();
+  const isDecember = d.getMonth() === 11;
+  const maxYear = getMaxBookingYear(d);
+
+  for (const date of dates || []) {
+    const year = getYearFromDateInput(date);
+    if (Number.isNaN(year)) {
+      throw { statusCode: 400, message: 'Ngày đặt sân không hợp lệ' };
+    }
+    if (year > maxYear) {
+      const message = isDecember
+        ? `Chỉ có thể đặt sân đến hết năm ${maxYear}.`
+        : `Hiện chỉ mở đặt sân đến hết năm ${currentYear}. Năm ${currentYear + 1} sẽ mở đặt từ tháng 12.`;
+      throw { statusCode: 400, message };
+    }
+  }
 };
 
 /**
@@ -178,6 +228,8 @@ module.exports = {
   isPastDateTime,
   calculateSlotPrice,
   calculateDepositAmount,
+  getMaxBookingYear,
+  assertBookingDatesWithinAllowedYears,
   formatDate,
   formatDateTime,
   shouldAutoComplete

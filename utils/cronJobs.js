@@ -51,7 +51,27 @@ const startRenewalJobs = () => {
   console.log('⏰ Renewal reminder/release jobs scheduled');
 };
 
+/**
+ * Cron job to auto-expire Pending bookings so slots are freed.
+ * Runs every 30 minutes.
+ */
+const startExpirePendingBookingsJob = (timeoutHours = 24) => {
+  cron.schedule('*/30 * * * *', async () => {
+    try {
+      const result = await bookingService.expirePendingBookings(timeoutHours);
+      if ((result.expiredBookings || 0) > 0 || (result.expiredDetails || 0) > 0) {
+        console.log(`🧹 Expired pending bookings | bookings=${result.expiredBookings}, details=${result.expiredDetails}`);
+      }
+    } catch (error) {
+      console.error('❌ Error in expire-pending booking job:', error);
+    }
+  }, { timezone: 'Asia/Ho_Chi_Minh' });
+
+  console.log(`⏰ Expire-pending booking job scheduled (every 30 minutes, timeout=${timeoutHours}h)`);
+};
+
 module.exports = {
   startAutoCompleteJob,
-  startRenewalJobs
+  startRenewalJobs,
+  startExpirePendingBookingsJob
 };

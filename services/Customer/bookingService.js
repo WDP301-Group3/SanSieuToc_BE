@@ -10,6 +10,7 @@ const {
   isPastDateTime,
   calculateSlotPrice,
   calculateDepositAmount,
+  assertBookingDatesWithinAllowedYears,
   formatDate,
   formatDateTime
 } = require('../../utils/bookingHelpers');
@@ -34,6 +35,9 @@ const getFieldAvailability = async (fieldId, date) => {
     throw { statusCode: 400, message: 'Không thể xem lịch của ngày đã qua' };
   }
 
+  // Limit booking window by year (also applies to availability view)
+  assertBookingDatesWithinAllowedYears([date]);
+
   // Generate time slots based on field settings
   const timeSlots = generateTimeSlots(
     field.openingTime,
@@ -49,13 +53,14 @@ const getFieldAvailability = async (fieldId, date) => {
   const startOfDay = new Date(`${date}T00:00:00`);
   const endOfDay = new Date(`${date}T23:59:59.999`);
 
+  // Consider both Pending and Active details as blocking (slot is locked immediately after customer creates booking)
   const bookedDetails = await BookingDetail.find({
     fieldID: fieldId,
     startTime: { $gte: startOfDay, $lte: endOfDay },
-    status: 'Active'
+    status: { $in: ['Pending', 'Active'] }
   }).populate({
     path: 'bookingID',
-    match: { status: 'Confirmed' }
+    match: { status: { $in: ['Pending', 'Confirmed'] } }
   });
 
   const heldDetails = await SlotHold.find({
@@ -64,12 +69,12 @@ const getFieldAvailability = async (fieldId, date) => {
     status: 'Held'
   }).select('startTime endTime');
 
-  // Filter out bookingDetails where booking is not confirmed
-  const activeBookedDetails = bookedDetails.filter(bd => bd.bookingID !== null);
+  // Filter out bookingDetails where booking is not Pending/Confirmed (e.g., Cancelled)
+  const blockingBookedDetails = bookedDetails.filter(bd => bd.bookingID !== null);
 
   // Mark slots as available or not
   const slots = dateTimeSlots.map(slot => {
-    const isBooked = activeBookedDetails.some(bd =>
+    const isBooked = blockingBookedDetails.some(bd =>
       bd.startTime.getTime() === slot.startTime.getTime() &&
       bd.endTime.getTime() === slot.endTime.getTime()
     );
@@ -155,6 +160,9 @@ const createBooking = async (customerId, bookingData) => {
     throw { statusCode: 400, message: 'Không thể đặt sân cho ngày đã qua' };
   }
 
+  // Limit booking window by year (covers weekly/recurring ranges too)
+  assertBookingDatesWithinAllowedYears(bookingDates);
+
   let booking = null;
 
   try {
@@ -186,15 +194,16 @@ const createBooking = async (customerId, bookingData) => {
           throw { statusCode: 400, message: `Khung giờ ${slot.startTime}-${slot.endTime} không hợp lệ` };
         }
 
-        // Check if slot is already booked
+        // Check if slot is already locked by another booking (Pending or Confirmed)
         const existingBooking = await BookingDetail.findOne({
           fieldID: fieldId,
           startTime: slotStartTime,
           endTime: slotEndTime,
-          status: 'Active'
+          status: { $in: ['Pending', 'Active'] }
         }).populate({
           path: 'bookingID',
-          match: { status: 'Confirmed' }
+          match: { status: { $in: ['Pending', 'Confirmed'] } },
+          select: '_id status'
         });
 
         if (existingBooking && existingBooking.bookingID) {
@@ -236,7 +245,7 @@ const createBooking = async (customerId, bookingData) => {
       }
     }
 
-    // Calculate deposit (20% of total)
+    // Calculate deposit (30% of total)
     const depositAmount = calculateDepositAmount(totalPrice);
 
     // Create booking (master record)
@@ -336,6 +345,45 @@ const createBooking = async (customerId, bookingData) => {
 };
 
 /**
+ * Auto-expire Pending bookings after a timeout so slots are freed.
+ * Default: 24 hours.
+ */
+const expirePendingBookings = async (timeoutHours = 24) => {
+  const hours = Number(timeoutHours);
+  if (!Number.isFinite(hours) || hours <= 0) {
+    throw { statusCode: 400, message: 'timeoutHours không hợp lệ' };
+  }
+
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+  const pending = await Booking.find({
+    status: 'Pending',
+    createdAt: { $lte: cutoff }
+  }).select('_id');
+
+  if (pending.length === 0) {
+    return { expiredBookings: 0, expiredDetails: 0 };
+  }
+
+  const bookingIds = pending.map((b) => b._id);
+
+  const bookingRes = await Booking.updateMany(
+    { _id: { $in: bookingIds }, status: 'Pending' },
+    { $set: { status: 'Cancelled', totalPrice: 0, depositAmount: 0 } }
+  );
+
+  const detailsRes = await BookingDetail.updateMany(
+    { bookingID: { $in: bookingIds }, status: { $in: ['Pending', 'Active'] } },
+    { $set: { status: 'Cancelled' } }
+  );
+
+  return {
+    expiredBookings: bookingRes.modifiedCount || 0,
+    expiredDetails: detailsRes.modifiedCount || 0
+  };
+};
+
+/**
  * Update booking detail status (by manager)
  */
 const updateBookingDetailStatus = async (bookingDetailId, newStatus, managerId) => {
@@ -422,7 +470,7 @@ const updateBookingDetailStatus = async (bookingDetailId, newStatus, managerId) 
  * Logic:
  * - Nếu Booking.status = Cancelled → totalPrice = 0, depositAmount = 0
  * - Nếu Booking.status ≠ Cancelled:
- *   + depositAmount (booking) = 20% × Σ(priceSnapshot của slots Active/Cancelled)
+ *   + depositAmount (booking) = 30% × Σ(priceSnapshot của slots Pending/Active/Cancelled)
  *   + totalPrice = depositAmount + Σ(priceSnapshot của slots Completed)
  */
 const recalculateBookingTotals = async (bookingId) => {
@@ -439,18 +487,18 @@ const recalculateBookingTotals = async (bookingId) => {
 
   // Trường hợp 2: Booking không Cancelled
   let completedPrice = 0; // Tổng giá của slots Completed
-  let activeAndCancelledPrice = 0; // Tổng giá của slots Active/Cancelled
+  let pendingActiveCancelledPrice = 0; // Tổng giá của slots Pending/Active/Cancelled
 
   for (const detail of bookingDetails) {
     if (detail.status === 'Completed') {
       completedPrice += detail.priceSnapshot;
-    } else if (detail.status === 'Active' || detail.status === 'Cancelled') {
-      activeAndCancelledPrice += detail.priceSnapshot;
+    } else if (detail.status === 'Pending' || detail.status === 'Active' || detail.status === 'Cancelled') {
+      pendingActiveCancelledPrice += detail.priceSnapshot;
     }
   }
 
   // Tính depositAmount từ Active/Cancelled slots
-  const depositAmount = calculateDepositAmount(activeAndCancelledPrice); // 20%
+  const depositAmount = calculateDepositAmount(pendingActiveCancelledPrice); // 30%
 
   // Tính totalPrice = deposit + completed
   const totalPrice = depositAmount + completedPrice;
@@ -1096,6 +1144,7 @@ module.exports = {
   updateBookingDetailStatus,
   cancelBooking,
   autoCompleteBookings,
+  expirePendingBookings,
   getCustomerBookings,
   recalculateBookingTotals,
   renewRecurringContract,

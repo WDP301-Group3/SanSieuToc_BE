@@ -1,5 +1,5 @@
 const Customer = require('../../models/Customer');
-const { isValidPhone, isValidAddress } = require('../../utils/validators');
+const { isValidEmail, isValidPhone, isValidAddress } = require('../../utils/validators');
 const { uploadImageBase64, deleteImage } = require('../../utils/cloudinaryConfig');
 
 /**
@@ -19,16 +19,39 @@ const getCustomerProfile = async (customerId) => {
  * Service: Update customer profile
  */
 const updateCustomerProfile = async (customerId, updateData) => {
-  const { name, phone, address, image } = updateData;
+  const { name, phone, email, address, image } = updateData;
 
   // Validate required fields
   if (!name || name.trim().length === 0) {
     throw { statusCode: 400, message: 'Name is required' };
   }
 
-  // Validate phone format if provided
-  if (phone) {
-    if (!isValidPhone(phone)) {
+  // If email is provided, it must not be empty and must be valid
+  if (email !== undefined) {
+    const emailTrimmed = String(email || '').trim().toLowerCase();
+    if (!emailTrimmed) {
+      throw { statusCode: 400, message: 'Email is required' };
+    }
+    if (!isValidEmail(emailTrimmed)) {
+      throw { statusCode: 400, message: 'Invalid email format' };
+    }
+
+    const existingEmail = await Customer.findOne({
+      email: emailTrimmed,
+      _id: { $ne: customerId }
+    }).select('_id');
+    if (existingEmail) {
+      throw { statusCode: 400, message: 'Email already in use' };
+    }
+  }
+
+  // If phone is provided, it must not be empty and must be valid
+  if (phone !== undefined) {
+    const phoneTrimmed = String(phone || '').trim();
+    if (!phoneTrimmed) {
+      throw { statusCode: 400, message: 'Phone is required' };
+    }
+    if (!isValidPhone(phoneTrimmed)) {
       throw { 
         statusCode: 400, 
         message: 'Invalid phone number. Please enter correct format (e.g., 0901234567)' 
@@ -37,7 +60,7 @@ const updateCustomerProfile = async (customerId, updateData) => {
 
     // Check if phone already exists (except current user)
     const existingPhone = await Customer.findOne({ 
-      phone, 
+      phone: phoneTrimmed,
       _id: { $ne: customerId } 
     });
     if (existingPhone) {
@@ -55,7 +78,8 @@ const updateCustomerProfile = async (customerId, updateData) => {
     name: name.trim()
   };
   
-  if (phone) updateFields.phone = phone;
+  if (email !== undefined) updateFields.email = String(email || '').trim().toLowerCase();
+  if (phone !== undefined) updateFields.phone = String(phone || '').trim();
   if (address) updateFields.address = address.trim();
   
   // Upload profile image to Cloudinary if base64 provided

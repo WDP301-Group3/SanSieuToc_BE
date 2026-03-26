@@ -22,9 +22,10 @@ mongoose.connect(process.env.MONGO_URI)
     console.log('Connected to MongoDB');
     
     // Start cron jobs after DB connection
-    const { startAutoCompleteJob, startRenewalJobs } = require('./utils/cronJobs');
+    const { startAutoCompleteJob, startRenewalJobs, startExpirePendingBookingsJob } = require('./utils/cronJobs');
     startAutoCompleteJob();
     startRenewalJobs();
+    startExpirePendingBookingsJob(24);
   })
   .catch(err => console.error('MongoDB connection error:', err));
 

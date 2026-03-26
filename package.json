@@ -4,7 +4,8 @@
   "description": "sansieutocbe",
   "main": "server.js",
   "scripts": {
-    "start": "nodemon server"
+    "start": "nodemon server",
+    "migrate:deposit30": "node scripts/migrateDepositRateTo30.js"
   },
   "keywords": [
     "nodejs",

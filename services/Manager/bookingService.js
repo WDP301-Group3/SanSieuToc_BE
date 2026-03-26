@@ -166,8 +166,8 @@ const confirmDeposit = async (managerId, bookingId) => {
     };
   }
 
-  // Slots are only locked after deposit confirmation.
-  // So right before confirming, ensure these slots haven't been taken by another Confirmed booking.
+  // Slots should be locked immediately after customer creates booking (Pending blocks).
+  // Right before confirming, ensure these slots haven't been taken/locked by another booking.
   for (const detail of bookingDetails) {
     const fieldId = detail.fieldID?._id || detail.fieldID;
     const conflict = await BookingDetail.findOne({
@@ -175,10 +175,10 @@ const confirmDeposit = async (managerId, bookingId) => {
       fieldID: fieldId,
       startTime: detail.startTime,
       endTime: detail.endTime,
-      status: 'Active'
+      status: { $in: ['Pending', 'Active'] }
     }).populate({
       path: 'bookingID',
-      match: { status: 'Confirmed' },
+      match: { status: { $in: ['Pending', 'Confirmed'] } },
       select: '_id status'
     });
 
@@ -235,7 +235,8 @@ const confirmDeposit = async (managerId, bookingId) => {
       const slots = Array.from(slotPairs.values());
 
       // Initial contract: create holds for future weeks (after contract ends)
-      if (!booking.renewedFromBookingId) {
+      // Only apply this renewal-hold mechanism for 3-month contracts.
+      if (!booking.renewedFromBookingId && Number(booking.durationMonths) === 3) {
         if (slots.length > 0) {
           const latestStart = detailsSorted.reduce((max, bd) => (bd.startTime > max ? bd.startTime : max), detailsSorted[0].startTime);
           const holdStartDate = new Date(latestStart);

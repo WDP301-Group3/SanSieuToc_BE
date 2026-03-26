@@ -1,5 +1,5 @@
 const Manager = require('../../models/Manager');
-const { isValidPhone } = require('../../utils/validators');
+const { isValidEmail, isValidPhone } = require('../../utils/validators');
 const { uploadImageBase64, deleteImage } = require('../../utils/cloudinaryConfig');
 
 /**
@@ -19,16 +19,39 @@ const getManagerProfile = async (managerId) => {
  * Service: Update manager profile
  */
 const updateManagerProfile = async (managerId, updateData) => {
-  const { name, phone, image, imageQR } = updateData;
+  const { name, phone, email, image, imageQR } = updateData;
 
   // Validate input
   if (!name || name.trim().length === 0) {
     throw { statusCode: 400, message: 'Tên không được để trống' };
   }
 
-  // Validate phone format if provided
-  if (phone) {
-    if (!isValidPhone(phone)) {
+  // If email is provided, it must not be empty and must be valid
+  if (email !== undefined) {
+    const emailTrimmed = String(email || '').trim().toLowerCase();
+    if (!emailTrimmed) {
+      throw { statusCode: 400, message: 'Email không được để trống' };
+    }
+    if (!isValidEmail(emailTrimmed)) {
+      throw { statusCode: 400, message: 'Email không hợp lệ' };
+    }
+
+    const existingEmail = await Manager.findOne({
+      email: emailTrimmed,
+      _id: { $ne: managerId }
+    }).select('_id');
+    if (existingEmail) {
+      throw { statusCode: 400, message: 'Email đã được sử dụng' };
+    }
+  }
+
+  // If phone is provided, it must not be empty and must be valid
+  if (phone !== undefined) {
+    const phoneTrimmed = String(phone || '').trim();
+    if (!phoneTrimmed) {
+      throw { statusCode: 400, message: 'Số điện thoại không được để trống' };
+    }
+    if (!isValidPhone(phoneTrimmed)) {
       throw { 
         statusCode: 400, 
         message: 'Số điện thoại không hợp lệ. Vui lòng nhập đúng định dạng (VD: 0901234567)' 
@@ -37,7 +60,7 @@ const updateManagerProfile = async (managerId, updateData) => {
 
     // Check if phone already exists (except current user)
     const existingPhone = await Manager.findOne({ 
-      phone, 
+      phone: phoneTrimmed,
       _id: { $ne: managerId } 
     });
     if (existingPhone) {
@@ -50,7 +73,8 @@ const updateManagerProfile = async (managerId, updateData) => {
     name: name.trim()
   };
   
-  if (phone !== undefined) updateFields.phone = phone;
+  if (email !== undefined) updateFields.email = String(email || '').trim().toLowerCase();
+  if (phone !== undefined) updateFields.phone = String(phone || '').trim();
   
   // Upload profile image to Cloudinary if base64 provided
   if (image !== undefined) {
