@@ -441,6 +441,102 @@ const sendNewBookingNotificationToManager = async (manager, customer, booking, b
   return info;
 };
 
+/**
+ * Send reminder email to customer when recurring contract is expiring soon (T-14)
+ */
+const sendRecurringContractExpiryReminderToCustomer = async (customer, booking, field, slotSummary = '') => {
+  if (!isEmailConfigured()) {
+    console.warn('⚠️ Email not configured. Skipping contract expiry reminder (customer).');
+    return;
+  }
+
+  const transporter = createTransporter();
+
+  const endAt = booking?.contractEndAt ? new Date(booking.contractEndAt) : null;
+  const endText = endAt
+    ? endAt.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    : '';
+
+  const bookingCode = booking?._id ? `#${booking._id.toString().slice(-6)}` : '';
+
+  const mailOptions = {
+    from: `"Sân Siêu Tốc" <${process.env.EMAIL_USER}>`,
+    to: customer.email,
+    subject: `⏳ Hợp đồng đặt sân sắp hết hạn ${bookingCode} - Sân Siêu Tốc`,
+    html: `
+      <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
+        <h2 style="color: #f59e0b;">⏳ Hợp đồng đặt sân sắp hết hạn</h2>
+        <p>Xin chào <strong>${customer?.name || ''}</strong>,</p>
+        <p>Hợp đồng đặt sân theo định kỳ của bạn sắp hết hạn. Bạn có muốn gia hạn để tiếp tục giữ khung giờ đã đặt không?</p>
+
+        <div style="margin: 20px 0; padding: 15px; background-color: #fff7ed; border-left: 4px solid #f59e0b;">
+          <p style="margin: 5px 0;"><strong>Sân:</strong> ${field?.fieldName || ''}</p>
+          <p style="margin: 5px 0;"><strong>Khung giờ:</strong> ${slotSummary || '(không xác định)'}</p>
+          <p style="margin: 5px 0;"><strong>Ngày hết hạn hợp đồng:</strong> ${endText || '(không xác định)'}</p>
+        </div>
+
+        <p>Nếu bạn muốn gia hạn, vui lòng bấm gia hạn và hoàn tất thanh toán tiền cọc theo hướng dẫn trong hệ thống trước thời hạn quy định.</p>
+        <p style="color:#e11d48;"><strong>Lưu ý:</strong> Nếu bạn không gia hạn và chưa được xác nhận tiền cọc, hệ thống sẽ nhả khung giờ cho người khác trước ngày hết hạn 7 ngày.</p>
+
+        <hr style="border:none;border-top:1px solid #eee;margin:20px 0;">
+        <p style="color:#777;font-size:12px;">Email này được gửi tự động, vui lòng không trả lời.</p>
+        <p style="color:#777;font-size:12px;">© 2026 Sân Siêu Tốc. All rights reserved.</p>
+      </div>
+    `
+  };
+
+  return await transporter.sendMail(mailOptions);
+};
+
+/**
+ * Send reminder email to manager (field owner) when a customer's contract is expiring soon (T-14)
+ */
+const sendRecurringContractExpiryReminderToManager = async (manager, booking, field, slotSummary = '') => {
+  if (!isEmailConfigured()) {
+    console.warn('⚠️ Email not configured. Skipping contract expiry reminder (manager).');
+    return;
+  }
+
+  const managerEmail = manager?.email;
+  if (!managerEmail) return;
+
+  const transporter = createTransporter();
+
+  const endAt = booking?.contractEndAt ? new Date(booking.contractEndAt) : null;
+  const endText = endAt
+    ? endAt.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    : '';
+
+  const bookingCode = booking?._id ? `#${booking._id.toString().slice(-6)}` : '';
+
+  const mailOptions = {
+    from: `"Sân Siêu Tốc" <${process.env.EMAIL_USER}>`,
+    to: managerEmail,
+    subject: `⏳ Hợp đồng sân sắp hết hạn ${bookingCode} - Sân Siêu Tốc`,
+    html: `
+      <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px;">
+        <h2 style="color: #f59e0b;">⏳ Hợp đồng khung giờ sắp hết hạn</h2>
+        <p>Xin chào <strong>${manager?.name || 'Chủ sân'}</strong>,</p>
+        <p>Một hợp đồng đặt sân theo định kỳ sắp hết hạn. Hệ thống đã gửi nhắc gia hạn cho khách.</p>
+
+        <div style="margin: 20px 0; padding: 15px; background-color: #fff7ed; border-left: 4px solid #f59e0b;">
+          <p style="margin: 5px 0;"><strong>Sân:</strong> ${field?.fieldName || ''}</p>
+          <p style="margin: 5px 0;"><strong>Khung giờ:</strong> ${slotSummary || '(không xác định)'}</p>
+          <p style="margin: 5px 0;"><strong>Ngày hết hạn hợp đồng:</strong> ${endText || '(không xác định)'}</p>
+        </div>
+
+        <p>Nếu khách gia hạn và bạn xác nhận đã nhận tiền cọc, hệ thống sẽ tiếp tục giữ khung giờ này cho khách.</p>
+        <p>Nếu khách không gia hạn và chưa được xác nhận tiền cọc, hệ thống sẽ nhả khung giờ trước ngày hết hạn 7 ngày.</p>
+
+        <hr style="border:none;border-top:1px solid #eee;margin:20px 0;">
+        <p style="color:#777;font-size:12px;">© 2026 Sân Siêu Tốc. All rights reserved.</p>
+      </div>
+    `
+  };
+
+  return await transporter.sendMail(mailOptions);
+};
+
 module.exports = {
   sendResetPasswordEmail,
   sendDepositConfirmedEmail,
@@ -449,5 +545,7 @@ module.exports = {
   sendBookingConfirmationEmail,
   sendBookingCancelledDueToNoDepositEmail,
   sendNewBookingNotificationToManager,
+  sendRecurringContractExpiryReminderToCustomer,
+  sendRecurringContractExpiryReminderToManager,
   isEmailConfigured,
 };

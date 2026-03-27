@@ -34,6 +34,28 @@ const getFieldDetail = async (fieldId) => {
       };
     }
 
+    // Validate populated fields before accessing properties
+    if (!field.fieldTypeID) {
+      throw {
+        statusCode: 404,
+        message: 'Loại sân không hợp lệ hoặc đã bị xóa'
+      };
+    }
+
+    if (!field.fieldTypeID.categoryID) {
+      throw {
+        statusCode: 404,
+        message: 'Danh mục sân không hợp lệ hoặc đã bị xóa'
+      };
+    }
+
+    if (!field.managerID) {
+      throw {
+        statusCode: 404,
+        message: 'Người quản lý sân không hợp lệ hoặc đã bị xóa'
+      };
+    }
+
     // Format response data
     const fieldDetail = {
       _id: field._id,

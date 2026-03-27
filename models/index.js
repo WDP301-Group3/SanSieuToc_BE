@@ -7,5 +7,6 @@ module.exports = {
   Field: require('./Field'),
   Booking: require('./Booking'),
   BookingDetail: require('./BookingDetail'),
+  SlotHold: require('./SlotHold'),
   Feedback: require('./Feedback')
 };

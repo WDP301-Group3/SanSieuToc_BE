@@ -11,4 +11,7 @@ router.post('/bookings', verifyToken, isCustomer, bookingController.createBookin
 router.get('/bookings/my-bookings', verifyToken, isCustomer, bookingController.getCustomerBookings);
 router.put('/bookings/:bookingId/cancel', verifyToken, isCustomer, bookingController.cancelBooking);
 
+// Renewal (recurring 3-month contract)
+router.post('/bookings/:bookingId/renew', verifyToken, isCustomer, bookingController.renewBooking);
+
 module.exports = router;

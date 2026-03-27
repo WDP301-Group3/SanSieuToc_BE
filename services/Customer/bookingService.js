@@ -1,6 +1,7 @@
 const Field = require('../../models/Field');
 const Booking = require('../../models/Booking');
 const BookingDetail = require('../../models/BookingDetail');
+const SlotHold = require('../../models/SlotHold');
 const {
   generateTimeSlots,
   generateDateTimeSlots,
@@ -9,6 +10,7 @@ const {
   isPastDateTime,
   calculateSlotPrice,
   calculateDepositAmount,
+  assertBookingDatesWithinAllowedYears,
   formatDate,
   formatDateTime
 } = require('../../utils/bookingHelpers');
@@ -33,6 +35,9 @@ const getFieldAvailability = async (fieldId, date) => {
     throw { statusCode: 400, message: 'Không thể xem lịch của ngày đã qua' };
   }
 
+  // Limit booking window by year (also applies to availability view)
+  assertBookingDatesWithinAllowedYears([date]);
+
   // Generate time slots based on field settings
   const timeSlots = generateTimeSlots(
     field.openingTime,
@@ -48,23 +53,35 @@ const getFieldAvailability = async (fieldId, date) => {
   const startOfDay = new Date(`${date}T00:00:00`);
   const endOfDay = new Date(`${date}T23:59:59.999`);
 
+  // Consider both Pending and Active details as blocking (slot is locked immediately after customer creates booking)
   const bookedDetails = await BookingDetail.find({
     fieldID: fieldId,
     startTime: { $gte: startOfDay, $lte: endOfDay },
-    status: { $in: ['Active', 'Pending'] }
+    status: { $in: ['Pending', 'Active'] }
   }).populate({
     path: 'bookingID',
-    match: { status: { $ne: 'Cancelled' } }
+    match: { status: { $in: ['Pending', 'Confirmed'] } }
   });
 
-  // Filter out bookingDetails where booking was cancelled
-  const activeBookedDetails = bookedDetails.filter(bd => bd.bookingID !== null);
+  const heldDetails = await SlotHold.find({
+    fieldID: fieldId,
+    startTime: { $gte: startOfDay, $lte: endOfDay },
+    status: 'Held'
+  }).select('startTime endTime');
+
+  // Filter out bookingDetails where booking is not Pending/Confirmed (e.g., Cancelled)
+  const blockingBookedDetails = bookedDetails.filter(bd => bd.bookingID !== null);
 
   // Mark slots as available or not
   const slots = dateTimeSlots.map(slot => {
-    const isBooked = activeBookedDetails.some(bd =>
+    const isBooked = blockingBookedDetails.some(bd =>
       bd.startTime.getTime() === slot.startTime.getTime() &&
       bd.endTime.getTime() === slot.endTime.getTime()
+    );
+
+    const isHeld = heldDetails.some(h =>
+      h.startTime.getTime() === slot.startTime.getTime() &&
+      h.endTime.getTime() === slot.endTime.getTime()
     );
 
     const price = calculateSlotPrice(slot.startTime, slot.endTime, field.hourlyPrice);
@@ -73,7 +90,7 @@ const getFieldAvailability = async (fieldId, date) => {
       startTime: slot.startTime,
       endTime: slot.endTime,
       duration: field.slotDuration,
-      isAvailable: !isBooked,
+      isAvailable: !(isBooked || isHeld),
       price: price
     };
   });
@@ -103,7 +120,8 @@ const createBooking = async (customerId, bookingData) => {
     startDate,
     selectedSlots, // Array of {startTime, endTime}
     repeatType, // "once", "weekly", "recurring"
-    duration // 4, 8, 12 weeks (only for recurring)
+    duration, // months (only for recurring)
+    renewFromBookingId // optional: convert SlotHold of this series booking
   } = bookingData;
 
   // Validate field và populate manager để lấy QR code
@@ -142,6 +160,9 @@ const createBooking = async (customerId, bookingData) => {
     throw { statusCode: 400, message: 'Không thể đặt sân cho ngày đã qua' };
   }
 
+  // Limit booking window by year (covers weekly/recurring ranges too)
+  assertBookingDatesWithinAllowedYears(bookingDates);
+
   let booking = null;
 
   try {
@@ -173,15 +194,16 @@ const createBooking = async (customerId, bookingData) => {
           throw { statusCode: 400, message: `Khung giờ ${slot.startTime}-${slot.endTime} không hợp lệ` };
         }
 
-        // Check if slot is already booked
+        // Check if slot is already locked by another booking (Pending or Confirmed)
         const existingBooking = await BookingDetail.findOne({
           fieldID: fieldId,
           startTime: slotStartTime,
           endTime: slotEndTime,
-          status: { $in: ['Active', 'Pending'] }
+          status: { $in: ['Pending', 'Active'] }
         }).populate({
           path: 'bookingID',
-          match: { status: { $ne: 'Cancelled' } }
+          match: { status: { $in: ['Pending', 'Confirmed'] } },
+          select: '_id status'
         });
 
         if (existingBooking && existingBooking.bookingID) {
@@ -189,6 +211,24 @@ const createBooking = async (customerId, bookingData) => {
             statusCode: 409,
             message: `Slot ${slot.startTime}-${slot.endTime} ngày ${dateStr} đã được đặt. Vui lòng chọn slot khác!`
           };
+        }
+
+        // Check if slot is held (reserved for renewal priority)
+        const existingHold = await SlotHold.findOne({
+          fieldID: fieldId,
+          startTime: slotStartTime,
+          endTime: slotEndTime,
+          status: 'Held'
+        }).select('seriesBookingId');
+
+        if (existingHold) {
+          const allowConvert = renewFromBookingId && String(existingHold.seriesBookingId) === String(renewFromBookingId);
+          if (!allowConvert) {
+            throw {
+              statusCode: 409,
+              message: `Slot ${slot.startTime}-${slot.endTime} ngày ${dateStr} đang được giữ chỗ. Vui lòng chọn slot khác!`
+            };
+          }
         }
 
         // Calculate price for this slot
@@ -200,17 +240,21 @@ const createBooking = async (customerId, bookingData) => {
           startTime: slotStartTime,
           endTime: slotEndTime,
           priceSnapshot: slotPrice,
-          status: 'Active'
+          status: 'Pending'
         });
       }
     }
 
-    // Calculate deposit (20% of total)
+    // Calculate deposit (30% of total)
     const depositAmount = calculateDepositAmount(totalPrice);
 
     // Create booking (master record)
     booking = new Booking({
+      fieldID: fieldId,
       customerID: customerId,
+      repeatType: repeatType,
+      durationMonths: repeatType === 'recurring' ? (duration || 0) : 0,
+      renewedFromBookingId: renewFromBookingId || null,
       totalPrice: depositAmount, // Initially only deposit
       depositAmount: depositAmount,
       status: 'Pending',
@@ -226,6 +270,32 @@ const createBooking = async (customerId, bookingData) => {
 
     // Create booking details
     const createdDetails = await BookingDetail.insertMany(bookingDetailsToCreate);
+
+    // If this is a recurring contract, compute contract metadata.
+    // NOTE: Slot locking (SlotHold creation/conversion) is done only after manager confirms deposit.
+    if (repeatType === 'recurring') {
+      try {
+        const contractStartAt = createdDetails.reduce(
+          (min, bd) => (bd.startTime < min ? bd.startTime : min),
+          createdDetails[0].startTime
+        );
+        const contractEndAt = createdDetails.reduce(
+          (max, bd) => (bd.endTime > max ? bd.endTime : max),
+          createdDetails[0].endTime
+        );
+
+        const holdUntil = new Date(contractStartAt);
+        holdUntil.setFullYear(holdUntil.getFullYear() + 1);
+
+        booking.contractStartAt = contractStartAt;
+        booking.contractEndAt = contractEndAt;
+        booking.holdUntil = holdUntil;
+        booking.renewalState = booking.renewalState || 'Active';
+        await booking.save();
+      } catch (metaError) {
+        console.error('Error creating SlotHold for recurring contract:', metaError.message || metaError);
+      }
+    }
 
     // Send emails (không throw error nếu email fail)
     try {
@@ -272,6 +342,45 @@ const createBooking = async (customerId, bookingData) => {
     }
     throw error;
   }
+};
+
+/**
+ * Auto-expire Pending bookings after a timeout so slots are freed.
+ * Default: 24 hours.
+ */
+const expirePendingBookings = async (timeoutHours = 24) => {
+  const hours = Number(timeoutHours);
+  if (!Number.isFinite(hours) || hours <= 0) {
+    throw { statusCode: 400, message: 'timeoutHours không hợp lệ' };
+  }
+
+  const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+  const pending = await Booking.find({
+    status: 'Pending',
+    createdAt: { $lte: cutoff }
+  }).select('_id');
+
+  if (pending.length === 0) {
+    return { expiredBookings: 0, expiredDetails: 0 };
+  }
+
+  const bookingIds = pending.map((b) => b._id);
+
+  const bookingRes = await Booking.updateMany(
+    { _id: { $in: bookingIds }, status: 'Pending' },
+    { $set: { status: 'Cancelled', totalPrice: 0, depositAmount: 0 } }
+  );
+
+  const detailsRes = await BookingDetail.updateMany(
+    { bookingID: { $in: bookingIds }, status: { $in: ['Pending', 'Active'] } },
+    { $set: { status: 'Cancelled' } }
+  );
+
+  return {
+    expiredBookings: bookingRes.modifiedCount || 0,
+    expiredDetails: detailsRes.modifiedCount || 0
+  };
 };
 
 /**
@@ -361,7 +470,7 @@ const updateBookingDetailStatus = async (bookingDetailId, newStatus, managerId) 
  * Logic:
  * - Nếu Booking.status = Cancelled → totalPrice = 0, depositAmount = 0
  * - Nếu Booking.status ≠ Cancelled:
- *   + depositAmount (booking) = 20% × Σ(priceSnapshot của slots Active/Cancelled)
+ *   + depositAmount (booking) = 30% × Σ(priceSnapshot của slots Pending/Active/Cancelled)
  *   + totalPrice = depositAmount + Σ(priceSnapshot của slots Completed)
  */
 const recalculateBookingTotals = async (bookingId) => {
@@ -378,18 +487,18 @@ const recalculateBookingTotals = async (bookingId) => {
 
   // Trường hợp 2: Booking không Cancelled
   let completedPrice = 0; // Tổng giá của slots Completed
-  let activeAndCancelledPrice = 0; // Tổng giá của slots Active/Cancelled
+  let pendingActiveCancelledPrice = 0; // Tổng giá của slots Pending/Active/Cancelled
 
   for (const detail of bookingDetails) {
     if (detail.status === 'Completed') {
       completedPrice += detail.priceSnapshot;
-    } else if (detail.status === 'Active' || detail.status === 'Cancelled') {
-      activeAndCancelledPrice += detail.priceSnapshot;
+    } else if (detail.status === 'Pending' || detail.status === 'Active' || detail.status === 'Cancelled') {
+      pendingActiveCancelledPrice += detail.priceSnapshot;
     }
   }
 
   // Tính depositAmount từ Active/Cancelled slots
-  const depositAmount = calculateDepositAmount(activeAndCancelledPrice); // 20%
+  const depositAmount = calculateDepositAmount(pendingActiveCancelledPrice); // 30%
 
   // Tính totalPrice = deposit + completed
   const totalPrice = depositAmount + completedPrice;
@@ -516,6 +625,17 @@ const getCustomerBookings = async (customerId) => {
         status: booking.status,
         statusPayment: booking.statusPayment,
         createdAt: booking.createdAt,
+
+        // Recurring contract metadata (for renewal UI)
+        repeatType: booking.repeatType || 'once',
+        durationMonths: booking.durationMonths || 0,
+        contractStartAt: booking.contractStartAt || null,
+        contractEndAt: booking.contractEndAt || null,
+        holdUntil: booking.holdUntil || null,
+        renewalState: booking.renewalState || null,
+        renewalReminderSentAt: booking.renewalReminderSentAt || null,
+        renewedFromBookingId: booking.renewedFromBookingId || null,
+        depositConfirmedAt: booking.depositConfirmedAt || null,
         
         // Thông tin thanh toán bổ sung
         paymentInfo: {
@@ -795,12 +915,239 @@ const cancelBooking = async (customerId, bookingId) => {
   };
 };
 
+/**
+ * Renew a recurring 3-month contract booking.
+ * - Creates a new recurring booking starting from next cycle.
+ * - Links via renewedFromBookingId.
+ * - Converts SlotHold entries (Held) into Converted for the new paid period.
+ * Note: Renewal is considered successful only after manager confirms deposit.
+ */
+const renewRecurringContract = async (customerId, bookingId, duration = 3) => {
+  const durationMonths = duration == null ? 3 : Number(duration);
+  if (![1, 2, 3].includes(durationMonths)) {
+    throw { statusCode: 400, message: 'Thời gian gia hạn phải là 1, 2 hoặc 3 tháng' };
+  }
+
+  const original = await Booking.findOne({ _id: bookingId, customerID: customerId }).populate('fieldID');
+  if (!original) {
+    throw { statusCode: 404, message: 'Booking gốc không tồn tại' };
+  }
+
+  if (original.repeatType !== 'recurring' || original.durationMonths !== 3) {
+    throw { statusCode: 400, message: 'Chỉ hỗ trợ gia hạn cho hợp đồng đặt hàng tuần (3 tháng)' };
+  }
+
+  if (!original.fieldID) {
+    throw { statusCode: 400, message: 'Booking gốc thiếu thông tin sân (fieldID). Không thể gia hạn.' };
+  }
+
+  if (!original.contractEndAt || !original.contractStartAt) {
+    throw { statusCode: 400, message: 'Booking gốc chưa có thông tin thời hạn hợp đồng. Không thể gia hạn.' };
+  }
+
+  if (original.status !== 'Confirmed') {
+    throw { statusCode: 400, message: 'Chỉ có thể gia hạn khi booking gốc đã được xác nhận (Confirmed)' };
+  }
+
+  const existingRenewal = await Booking.findOne({
+    renewedFromBookingId: original._id,
+    status: { $ne: 'Cancelled' }
+  }).select('_id status');
+  if (existingRenewal) {
+    throw { statusCode: 409, message: 'Booking này đã được tạo gia hạn trước đó' };
+  }
+
+  const details = await BookingDetail.find({ bookingID: original._id }).sort({ startTime: 1 });
+  if (!details || details.length === 0) {
+    throw { statusCode: 400, message: 'Booking gốc không có chi tiết slot' };
+  }
+
+  const firstDateStr = formatDate(original.contractStartAt);
+  const toTime = (d) => {
+    const dt = new Date(d);
+    const hh = String(dt.getHours()).padStart(2, '0');
+    const mm = String(dt.getMinutes()).padStart(2, '0');
+    return `${hh}:${mm}`;
+  };
+
+  const firstDayDetails = details.filter((bd) => formatDate(bd.startTime) === firstDateStr);
+  const unique = new Map();
+  for (const bd of firstDayDetails) {
+    const s = toTime(bd.startTime);
+    const e = toTime(bd.endTime);
+    unique.set(`${s}-${e}`, { startTime: s, endTime: e });
+  }
+  const selectedSlots = Array.from(unique.values());
+  if (selectedSlots.length === 0) {
+    throw { statusCode: 400, message: 'Không xác định được khung giờ để gia hạn' };
+  }
+
+  const nextStart = new Date(original.contractEndAt);
+  nextStart.setHours(0, 0, 0, 0);
+  nextStart.setDate(nextStart.getDate() + 7);
+  const startDate = formatDate(nextStart);
+
+  const data = await createBooking(customerId, {
+    fieldId: original.fieldID._id || original.fieldID,
+    startDate,
+    selectedSlots,
+    repeatType: 'recurring',
+    duration: durationMonths,
+    renewFromBookingId: original._id
+  });
+
+  return {
+    message: 'Tạo booking gia hạn thành công! Vui lòng thanh toán tiền cọc để xác nhận.',
+    data
+  };
+};
+
+const buildSlotSummaryForBooking = async (bookingId, contractStartAt) => {
+  const details = await BookingDetail.find({ bookingID: bookingId }).sort({ startTime: 1 });
+  if (!details || details.length === 0) return '';
+
+  const firstDateStr = contractStartAt ? formatDate(contractStartAt) : formatDate(details[0].startTime);
+  const toTime = (d) => {
+    const dt = new Date(d);
+    const hh = String(dt.getHours()).padStart(2, '0');
+    const mm = String(dt.getMinutes()).padStart(2, '0');
+    return `${hh}:${mm}`;
+  };
+
+  const firstDayDetails = details.filter((bd) => formatDate(bd.startTime) === firstDateStr);
+  const unique = new Map();
+  for (const bd of firstDayDetails) {
+    const s = toTime(bd.startTime);
+    const e = toTime(bd.endTime);
+    unique.set(`${s}-${e}`, `${s}-${e}`);
+  }
+  return Array.from(unique.values()).join(', ');
+};
+
+/**
+ * Cron task: Send reminder emails at T-14 days before contract ends.
+ */
+const sendRecurringContractExpiryReminders = async () => {
+  const now = new Date();
+  const target = new Date(now);
+  target.setDate(target.getDate() + 14);
+
+  const start = new Date(target);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(target);
+  end.setHours(23, 59, 59, 999);
+
+  const bookings = await Booking.find({
+    repeatType: 'recurring',
+    durationMonths: 3,
+    status: 'Confirmed',
+    contractEndAt: { $gte: start, $lte: end },
+    renewalReminderSentAt: null
+  })
+    .populate({ path: 'customerID', select: 'name email' })
+    .populate({ path: 'fieldID', populate: { path: 'managerID', select: 'name email' } });
+
+  let sent = 0;
+  for (const booking of bookings) {
+    try {
+      const customer = booking.customerID;
+      const field = booking.fieldID;
+      const manager = field?.managerID;
+
+      if (!customer?.email || !field) continue;
+
+      const slotSummary = await buildSlotSummaryForBooking(booking._id, booking.contractStartAt);
+      const { sendRecurringContractExpiryReminderToCustomer, sendRecurringContractExpiryReminderToManager } = require('../../utils/emailConfig');
+
+      await sendRecurringContractExpiryReminderToCustomer(customer, booking, field, slotSummary);
+      if (manager?.email) {
+        await sendRecurringContractExpiryReminderToManager(manager, booking, field, slotSummary);
+      }
+
+      booking.renewalReminderSentAt = new Date();
+      booking.renewalState = 'ReminderSent';
+      await booking.save();
+      sent++;
+    } catch (err) {
+      console.error('Error sending contract expiry reminder:', err.message || err);
+    }
+  }
+
+  return { sent, total: bookings.length };
+};
+
+/**
+ * Cron task: Release held slots at T-7 days before contract ends,
+ * if no renewal booking linked to this booking has confirmed deposit.
+ */
+const releaseHeldSlotsBeforeExpiry = async () => {
+  const now = new Date();
+  const target = new Date(now);
+  target.setDate(target.getDate() + 7);
+
+  const start = new Date(target);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(target);
+  end.setHours(23, 59, 59, 999);
+
+  const expiring = await Booking.find({
+    repeatType: 'recurring',
+    durationMonths: 3,
+    status: 'Confirmed',
+    contractEndAt: { $gte: start, $lte: end },
+    renewalState: { $in: ['Active', 'ReminderSent'] }
+  }).select('_id contractEndAt');
+
+  let releasedBookings = 0;
+  let releasedHolds = 0;
+
+  for (const booking of expiring) {
+    try {
+      const renewedAndConfirmed = await Booking.exists({
+        renewedFromBookingId: booking._id,
+        depositConfirmedAt: { $ne: null }
+      });
+
+      if (renewedAndConfirmed) {
+        await Booking.updateOne({ _id: booking._id }, { $set: { renewalState: 'Renewed' } });
+        continue;
+      }
+
+      const res = await SlotHold.updateMany(
+        {
+          seriesBookingId: booking._id,
+          status: 'Held',
+          startTime: { $gte: booking.contractEndAt }
+        },
+        {
+          $set: {
+            status: 'Released',
+            releasedAt: new Date()
+          }
+        }
+      );
+
+      releasedHolds += res.modifiedCount || 0;
+      await Booking.updateOne({ _id: booking._id }, { $set: { renewalState: 'Released' } });
+      releasedBookings++;
+    } catch (err) {
+      console.error('Error releasing held slots:', err.message || err);
+    }
+  }
+
+  return { releasedBookings, releasedHolds, total: expiring.length };
+};
+
 module.exports = {
   getFieldAvailability,
   createBooking,
   updateBookingDetailStatus,
   cancelBooking,
   autoCompleteBookings,
+  expirePendingBookings,
   getCustomerBookings,
-  recalculateBookingTotals
+  recalculateBookingTotals,
+  renewRecurringContract,
+  sendRecurringContractExpiryReminders,
+  releaseHeldSlotsBeforeExpiry
 };
